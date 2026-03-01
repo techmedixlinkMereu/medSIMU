@@ -1,3 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PNEUMO·VR v18 — neumAC R&I</title>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{
+  --bg:#010406;--panel:rgba(2,7,14,0.95);
+  --bdr:rgba(0,160,120,0.11);--bdr2:rgba(0,160,120,0.22);
+  --teal:#00c8a8;--teal2:#00f0d0;
+  --blue:#0a7aff;--red:#ff2244;--amber:#ff9900;
+  --purple:#9955ff;--green:#00e87a;--warn:#ff5500;
+  --text:#b8d8d0;--dim:#183028;--dim2:#0c1c18;
+  --mono:'JetBrains Mono',monospace;--head:'Oxanium',sans-serif;
+  --panel-w:210px;--rp-w:188px;--bro-w:410px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100vw;height:100vh;overflow:hidden;background:var(--bg)}
+body{font-family:var(--mono);color:var(--text);cursor:none}
+#cur{position:fixed;width:13px;height:13px;border:1px solid var(--teal2);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:width .08s,height .08s;mix-blend-mode:screen}
+#cur::after{content:'';position:absolute;width:2px;height:2px;border-radius:50%;background:var(--teal2);top:50%;left:50%;transform:translate(-50%,-50%)}
+#cur.p{width:22px;height:22px;border-color:var(--red)}
+#cur.v{border-color:var(--blue)}
+#cur.f{border-color:var(--amber)}
+#cur.g{width:28px;height:28px;border-color:var(--purple);border-width:2px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9990;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.018) 3px,rgba(0,0,0,.018) 6px)}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+#tb{height:44px;background:var(--panel);border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;padding:0 14px;flex-shrink:0;z-index:200;position:relative}
+#tb::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--teal) 30%,var(--teal2) 50%,var(--teal) 70%,transparent);opacity:.4}
+.brand{font-family:var(--head);font-weight:900;font-size:15px;letter-spacing:6px;color:var(--teal2)}
+.brand b{color:var(--blue)}
+.brand sub{font-size:7px;color:var(--dim2);letter-spacing:1px;vertical-align:sub;background:rgba(0,160,120,.12);border:1px solid var(--bdr);border-radius:2px;padding:1px 4px;margin-left:4px}
+.tabs{display:flex;gap:2px}
+.tab{padding:5px 12px;font-family:var(--head);font-size:9px;font-weight:700;letter-spacing:2.5px;color:var(--dim2);cursor:pointer;border-radius:2px;border:1px solid transparent;transition:all .12s;user-select:none}
+.tab:hover:not(.on){color:var(--text);border-color:var(--bdr)}
+.tab.on{background:rgba(0,200,160,.07);border-color:rgba(0,200,160,.25);color:var(--teal2)}
+.tb-stats{display:flex;gap:14px}
+.ts{text-align:center}
+.tsl{font-size:5px;letter-spacing:2.5px;color:var(--dim2);text-transform:uppercase;margin-bottom:1px}
+.tsv{font-family:var(--head);font-size:13px;font-weight:700;color:var(--teal);letter-spacing:.5px;line-height:1;transition:color .2s}
+.spill{display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.5);border:1px solid var(--bdr);border-radius:20px;padding:4px 10px}
+.sdot{width:5px;height:5px;border-radius:50%;background:var(--dim2);transition:all .3s}
+.sdot.on{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2.2s infinite}
+.sdot.w{background:var(--amber)}.sdot.r{background:var(--red)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.spillt{font-size:7px;letter-spacing:1.5px}
+#views{flex:1;display:flex;overflow:hidden;position:relative}
+#ext-view{flex:1;position:relative;min-width:0}
+#c-ext{width:100%;height:100%;display:block}
+#ext-label{position:absolute;top:9px;left:11px;font-size:6px;letter-spacing:3px;color:rgba(0,160,120,.4);text-transform:uppercase;pointer-events:none;z-index:10;font-family:var(--head)}
+#scope-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:20}
+#bro-view{width:var(--bro-w);flex-shrink:0;position:relative;background:#000;overflow:hidden;border-left:1px solid var(--bdr)}
+#c-bro{width:100%;height:100%;display:block}
+#bro-vig{position:absolute;inset:0;pointer-events:none;z-index:5;background:radial-gradient(ellipse 66% 66% at 50% 50%,transparent 46%,rgba(0,0,0,.96) 70%,#000 100%)}
+#bro-hud{position:absolute;inset:0;pointer-events:none;z-index:10;padding:11px}
+.bh{position:absolute;font-size:7px;letter-spacing:.6px;color:rgba(0,220,180,.5);line-height:1.9}
+#bh-tl{top:12px;left:13px}#bh-tr{top:12px;right:13px;text-align:right}
+#bh-bl{bottom:50px;left:13px}#bh-br{bottom:50px;right:13px;text-align:right}
+#xhair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;pointer-events:none;z-index:11;opacity:.45}
+#xhair::before,#xhair::after{content:'';position:absolute;background:rgba(0,240,208,.5)}
+#xhair::before{width:1px;height:36px;left:50%;transform:translateX(-50%)}
+#xhair::after{width:36px;height:1px;top:50%;transform:translateY(-50%)}
+.xr{position:absolute;top:50%;left:50%;border-radius:50%;transform:translate(-50%,-50%);border:1px solid rgba(0,240,208,.35)}
+.xr1{width:11px;height:11px}.xr2{width:26px;height:26px;border-color:rgba(0,240,208,.15)}
+#dbar{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:2px;height:48%;background:rgba(255,255,255,.04);border-radius:2px;z-index:10}
+#dfill{width:100%;background:linear-gradient(to top,var(--teal),var(--blue));border-radius:2px;transition:height .06s;height:0%;position:absolute;bottom:0}
+#defl-ind{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);pointer-events:none;z-index:12}
+#defl-canvas{width:80px;height:80px;opacity:.7}
+#palert{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) translateY(60px);background:rgba(12,0,3,.93);border:1px solid var(--red);border-radius:2px;padding:8px 18px;font-size:8px;letter-spacing:2.5px;color:var(--red);font-family:var(--head);font-weight:700;opacity:0;transition:opacity .25s;pointer-events:none;z-index:20;text-align:center;white-space:nowrap}
+#palert.show{opacity:1}
+#aring{position:absolute;top:50%;left:50%;width:0;height:0;border:2px solid var(--purple);border-radius:50%;opacity:0;transition:width .16s,height .16s,opacity .16s;pointer-events:none;z-index:15;transform:translate(-50%,-50%)}
+#aring.show{width:60px;height:60px;opacity:.7}
+#aring.fire{width:84px;height:84px;border-color:var(--amber);opacity:1}
+#hold-prog{position:absolute;top:50%;left:50%;width:64px;height:64px;transform:translate(-50%,-50%);pointer-events:none;z-index:16;opacity:0;transition:opacity .1s}
+#hold-prog.show{opacity:1}
+#hold-prog svg{width:64px;height:64px;transform:rotate(-90deg)}
+#hold-arc{fill:none;stroke:var(--purple);stroke-width:2.5;stroke-linecap:round;stroke-dasharray:188;stroke-dashoffset:188;transition:stroke-dashoffset .05s}
+#bsel{position:absolute;inset:0;pointer-events:none;z-index:30;display:flex;align-items:center;justify-content:space-between;padding:0 32px;opacity:0;transition:opacity .18s}
+#bsel.show{opacity:1}
+.bso{font-family:var(--head);font-size:18px;font-weight:800;letter-spacing:2px;padding:10px 16px;border-radius:2px;transition:all .12s;border:1px solid transparent}
+.bso.hi{background:rgba(0,200,160,.15);border-color:var(--teal2);color:var(--teal2)}
+.bso.lo{color:rgba(255,255,255,.12);border-color:rgba(255,255,255,.06)}
+#bsel-mid{color:rgba(0,200,160,.3);font-size:9px;letter-spacing:2px;font-family:var(--head);text-align:center}
+#lp{position:absolute;top:52px;left:8px;width:var(--panel-w);background:var(--panel);border:1px solid var(--bdr);border-left:2px solid var(--teal);border-radius:2px;backdrop-filter:blur(20px);z-index:50;overflow:hidden}
+.panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;user-select:none;border-bottom:1px solid var(--bdr)}
+.panel-hdr:hover{background:rgba(0,200,160,.03)}
+.ph-t{font-size:6px;letter-spacing:3px;color:var(--dim2);text-transform:uppercase;font-family:var(--head)}
+.ph-arr{font-size:10px;color:var(--dim2);transition:transform .2s}.ph-arr.open{transform:rotate(90deg)}
+.panel-body{padding:10px 12px}
+.grow{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.gring{position:relative;width:44px;height:44px;flex-shrink:0}
+.gring svg{width:44px;height:44px;transform:rotate(-90deg)}
+.gr-bg{fill:none;stroke:rgba(255,255,255,.04);stroke-width:3}
+.gr-fg{fill:none;stroke:var(--teal);stroke-width:3;stroke-linecap:round;stroke-dasharray:120;stroke-dashoffset:120;transition:stroke-dashoffset .05s}
+.grv{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:8px;color:var(--teal);font-family:var(--head);font-weight:700}
+#gname{font-family:var(--head);font-size:20px;font-weight:800;color:var(--teal2);line-height:1}
+#gname.p{color:var(--red)}#gname.v{color:var(--blue)}#gname.f{color:var(--amber)}
+#gsub{font-size:7px;color:var(--dim2);margin-top:2px;min-height:12px}
+#gbadge{font-size:6px;letter-spacing:1.5px;color:var(--teal);margin-top:3px;background:rgba(0,200,160,.06);border:1px solid var(--bdr);border-radius:2px;padding:2px 6px;display:inline-block}
+#tracking-quality{font-size:6px;color:var(--amber);margin-top:4px;min-height:12px}
+.br{display:flex;justify-content:space-between;font-size:7px;margin:2px 0}
+.brl{color:var(--dim2)}.brv{color:var(--teal)}
+.btrack{height:2px;background:rgba(255,255,255,.04);border-radius:1px;overflow:hidden;margin-bottom:7px}
+.bf{height:100%;border-radius:1px;transition:width .05s}
+.bf.t{background:var(--teal)}.bf.b{background:var(--blue)}.bf.r{background:var(--red)}.bf.g{background:var(--green)}.bf.low{background:var(--warn)}
+.hrow{display:flex;align-items:center;gap:6px;margin:3px 0}
+.hl{font-size:7px;color:var(--dim2);width:50px}
+.ht{flex:1;height:2px;background:rgba(255,255,255,.04);border-radius:1px;overflow:hidden}
+.hf{height:100%;border-radius:1px;transition:width .04s;background:var(--green)}.hf.low{background:var(--warn)}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.fc{background:rgba(255,255,255,.015);border:1px solid rgba(0,200,160,.06);border-radius:2px;padding:7px}
+.fcl{font-size:6px;letter-spacing:2px;color:var(--dim2);margin-bottom:5px;font-family:var(--head)}
+.fbs{display:flex;gap:3px;align-items:flex-end}
+.fb{width:8px;border-radius:1px 1px 0 0;background:rgba(255,255,255,.05);transition:all .05s;min-height:3px}
+.fb.t{background:var(--teal);box-shadow:0 0 4px var(--teal)}.fb.b{background:var(--blue);box-shadow:0 0 4px var(--blue)}
+.fcg{font-size:7px;color:var(--teal);margin-top:4px}.fcg.b{color:var(--blue)}
+.gmap{margin-top:8px;font-size:7px;color:var(--dim2);line-height:2.1}
+.gmap span{color:var(--text)}
+#rp{position:absolute;top:52px;right:calc(var(--bro-w) + 8px);width:var(--rp-w);background:var(--panel);border:1px solid var(--bdr);border-right:2px solid var(--blue);border-radius:2px;backdrop-filter:blur(20px);z-index:50;overflow:hidden}
+.spos{font-size:7px;color:var(--amber);letter-spacing:1px;margin-bottom:6px;padding:0 12px}
+.cmg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0 12px;margin-bottom:6px}
+.cmb{background:rgba(255,255,255,.02);border:1px solid rgba(0,200,160,.08);border-radius:2px;padding:7px 4px;text-align:center;cursor:pointer;color:var(--dim2);transition:all .12s;user-select:none}
+.cmb .ci{font-size:14px;margin-bottom:2px;display:block}
+.cmb .cl{font-size:6px;letter-spacing:1.5px;display:block;text-transform:uppercase}
+.cmb.on{background:rgba(153,85,255,.09);border-color:var(--purple);color:var(--purple)}
+.cmb:hover:not(.on){background:rgba(255,255,255,.03);color:var(--text)}
+.pi-item{display:flex;align-items:center;gap:5px;padding:4px 12px;border-bottom:1px solid rgba(255,255,255,.025);font-size:7px;color:var(--dim2)}
+.pid{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.pi-item.near{color:var(--text)}.pi-item.near .pid{animation:blink 1s infinite}
+.pdist{margin-left:auto;color:var(--teal);font-size:6px}
+#ann-list{max-height:72px;overflow-y:auto;padding:0 12px}
+.ai{font-size:7px;color:var(--teal);padding:2px 0;border-bottom:1px solid rgba(0,200,160,.05)}
+.ai span{color:var(--dim2)}
+#bpanel-l{position:absolute;bottom:8px;left:8px;width:var(--panel-w);background:var(--panel);border:1px solid var(--bdr);border-radius:2px;padding:9px 12px;backdrop-filter:blur(20px);z-index:50}
+.bst{font-size:6px;letter-spacing:3px;color:var(--dim2);text-transform:uppercase;margin-bottom:7px;font-family:var(--head)}
+.sr{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.sr label{font-size:7px;color:var(--dim2);width:62px}
+input[type=range]{flex:1;height:2px;-webkit-appearance:none;background:rgba(255,255,255,.07);border-radius:1px;cursor:pointer;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:8px;height:8px;border-radius:50%;background:var(--teal)}
+.sv{font-size:7px;color:var(--teal);width:20px;text-align:right}
+#cam-p{position:absolute;bottom:8px;right:calc(var(--bro-w) + 8px);width:var(--rp-w);height:128px;border-radius:2px;overflow:hidden;border:1px solid var(--bdr);background:#000;z-index:50}
+#cvid{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:none}
+#ccan{position:absolute;top:0;left:0;width:100%;height:100%;transform:scaleX(-1)}
+.ctag{position:absolute;top:6px;left:8px;font-size:5px;letter-spacing:2.5px;color:rgba(0,160,120,.45);z-index:2;font-family:var(--head)}
+#gdbg{position:absolute;bottom:5px;left:6px;font-size:6px;color:var(--teal);z-index:3}
+#bi{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--bdr);border-radius:2px;padding:8px 20px;text-align:center;min-width:220px;pointer-events:none;z-index:50}
+#bi-l{font-size:5px;letter-spacing:3px;color:var(--dim2);text-transform:uppercase;font-family:var(--head)}
+#bi-v{font-family:var(--head);font-size:13px;font-weight:700;color:var(--teal);margin-top:2px;letter-spacing:2px}
+#bi-v.w{color:var(--amber)}#bi-v.r{color:var(--red)}
+#ct-overlay{position:absolute;bottom:14px;right:14px;width:72px;height:72px;pointer-events:none;z-index:12;opacity:.55}
+#ct-canvas{width:72px;height:72px}
+#toast{position:fixed;top:52px;left:50%;transform:translateX(-50%) translateY(-8px);background:rgba(0,8,6,.97);border:1px solid var(--teal);border-radius:2px;padding:6px 20px;font-family:var(--head);font-size:11px;font-weight:700;letter-spacing:3px;color:var(--teal2);z-index:900;opacity:0;pointer-events:none;transition:all .18s}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#splash{position:fixed;inset:0;z-index:9000;background:radial-gradient(ellipse 90% 70% at 25% 45%,#040d18 0%,var(--bg) 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;overflow:hidden}
+.sey{font-size:7px;letter-spacing:7px;color:var(--dim2);text-transform:uppercase;font-family:var(--head)}
+.stitle{font-family:var(--head);font-size:clamp(46px,9vw,100px);font-weight:900;letter-spacing:2px;color:var(--teal2);line-height:.92}
+.stitle b{color:var(--blue)}
+.sver{font-size:8px;letter-spacing:4px;color:rgba(0,200,160,.4);text-transform:uppercase;font-family:var(--head);margin-top:4px}
+.sln{width:200px;height:1px;background:linear-gradient(90deg,transparent,var(--teal2),transparent);opacity:.35}
+.sdesc{color:#1e3c30;font-size:8px;max-width:460px;text-align:center;line-height:2.3}
+.sfeatures{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:540px}
+.sf{display:flex;flex-direction:column;align-items:center;gap:5px;background:rgba(0,200,160,.02);border:1px solid var(--bdr);border-radius:2px;padding:10px 8px;width:68px}
+.sfi{font-size:16px}.sfl{font-size:6px;letter-spacing:.7px;color:var(--dim2);text-align:center;line-height:1.5}
+#sbtn{background:transparent;border:1px solid var(--teal);color:var(--teal);font-family:var(--head);font-weight:700;font-size:10px;letter-spacing:7px;text-transform:uppercase;padding:13px 50px;border-radius:2px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden;outline:none}
+#sbtn::before{content:'';position:absolute;inset:0;background:var(--teal);transform:translateX(-100%);transition:transform .18s}
+#sbtn:hover{color:#010406}#sbtn:hover::before{transform:translateX(0)}
+#sbtn span{position:relative;z-index:1}
+.snote{font-size:7px;letter-spacing:2px;color:var(--dim2)}
+#mode-sel{position:fixed;inset:0;z-index:8500;overflow:hidden;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#mode-sel::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(0,200,160,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,160,.04) 1px,transparent 1px);background-size:44px 44px;animation:gridShift 18s linear infinite}
+@keyframes gridShift{0%{transform:translate(0,0)}100%{transform:translate(44px,44px)}}
+.ms-header{position:relative;z-index:2;text-align:center;margin-bottom:28px}
+.ms-eyebrow{font-family:var(--mono);font-size:7.5px;letter-spacing:5px;color:rgba(0,200,160,.45);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:10px;justify-content:center}
+.ms-title{font-family:var(--head);font-size:40px;font-weight:900;letter-spacing:4px;color:#fff;line-height:1;margin-bottom:6px}
+.ms-title b{color:var(--teal2)}
+.ms-title .ms-ver{font-size:16px;color:rgba(0,200,160,.35);letter-spacing:2px;font-weight:400;margin-left:8px}
+.ms-sub{font-family:var(--mono);font-size:8px;letter-spacing:2px;color:rgba(255,255,255,.18);margin-top:4px}
+.ms-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;max-width:960px;width:90%;position:relative;z-index:2}
+.mc{background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:24px 18px 20px;cursor:pointer;transition:transform .2s,box-shadow .2s,background .2s;position:relative;overflow:hidden;text-align:center;user-select:none}
+.mc:hover{transform:translateY(-5px)}
+.mc.student{border-top:3px solid var(--blue)}.mc.resident{border-top:3px solid var(--teal2)}
+.mc.patient{border-top:3px solid #7ab4e8}.mc.instructor{border-top:3px solid var(--amber)}
+.mc.student:hover{box-shadow:0 12px 40px rgba(10,122,255,.18);background:rgba(10,122,255,.04)}
+.mc.resident:hover{box-shadow:0 12px 40px rgba(0,240,208,.15);background:rgba(0,240,208,.03)}
+.mc.patient:hover{box-shadow:0 12px 40px rgba(122,180,232,.15);background:rgba(122,180,232,.03)}
+.mc.instructor:hover{box-shadow:0 12px 40px rgba(255,153,0,.15);background:rgba(255,153,0,.03)}
+.mc-icon{font-size:30px;margin-bottom:12px;display:block}
+.mc-name{font-family:var(--head);font-size:11px;font-weight:800;letter-spacing:4px;text-transform:uppercase;margin-bottom:8px}
+.mc.student .mc-name{color:var(--blue)}.mc.resident .mc-name{color:var(--teal2)}
+.mc.patient .mc-name{color:#7ab4e8}.mc.instructor .mc-name{color:var(--amber)}
+.mc-desc{font-size:7.5px;color:rgba(255,255,255,.28);line-height:1.9;margin-bottom:14px;font-family:var(--mono)}
+.mc-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:center}
+.mc-tag{font-size:5.5px;letter-spacing:1.5px;padding:3px 7px;border-radius:2px;border:1px solid;text-transform:uppercase;font-family:var(--head);font-weight:600}
+.mc.student .mc-tag{color:var(--blue);border-color:rgba(10,122,255,.25);background:rgba(10,122,255,.06)}
+.mc.resident .mc-tag{color:var(--teal2);border-color:rgba(0,240,208,.2);background:rgba(0,240,208,.05)}
+.mc.patient .mc-tag{color:#7ab4e8;border-color:rgba(122,180,232,.2);background:rgba(122,180,232,.05)}
+.mc.instructor .mc-tag{color:var(--amber);border-color:rgba(255,153,0,.2);background:rgba(255,153,0,.05)}
+.mc-lock{position:absolute;top:10px;right:10px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;border:1px solid}
+.mc.resident .mc-lock{color:var(--teal2);border-color:rgba(0,240,208,.3);background:rgba(0,240,208,.06)}
+.mc.instructor .mc-lock{color:var(--amber);border-color:rgba(255,153,0,.3);background:rgba(255,153,0,.06)}
+.ms-footer{position:relative;z-index:2;margin-top:18px;text-align:center}
+.ms-institution{font-family:var(--head);font-size:7px;letter-spacing:4px;color:rgba(0,200,160,.35);text-transform:uppercase;margin-bottom:4px}
+.ms-note{font-family:var(--mono);font-size:6px;letter-spacing:1px;color:rgba(255,255,255,.1)}
+@keyframes msCardIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+.mc{animation:msCardIn .4s ease both}
+.mc:nth-child(1){animation-delay:.06s}.mc:nth-child(2){animation-delay:.13s}
+.mc:nth-child(3){animation-delay:.20s}.mc:nth-child(4){animation-delay:.27s}
+#pin-overlay{position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,.88);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center}
+#pin-overlay.show{display:flex}
+.pin-box{background:rgba(2,7,14,.99);border:1px solid rgba(255,255,255,.07);border-radius:6px;padding:32px 36px;text-align:center;min-width:280px}
+.pin-title{font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:4px;color:var(--amber);margin-bottom:4px}
+.pin-sub{font-size:7px;color:rgba(255,255,255,.22);letter-spacing:1px;margin-bottom:20px;font-family:var(--mono)}
+.pin-dots{display:flex;gap:10px;justify-content:center;margin-bottom:20px}
+.pd{width:14px;height:14px;border-radius:50%;border:1px solid rgba(255,153,0,.25);background:transparent;transition:all .15s}
+.pd.fill{background:var(--amber);border-color:var(--amber);box-shadow:0 0 10px rgba(255,153,0,.5)}
+.pin-keys{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.pk{padding:11px;font-family:var(--head);font-size:15px;font-weight:700;color:rgba(255,255,255,.65);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:4px;cursor:pointer;transition:all .1s;user-select:none}
+.pk:hover{background:rgba(255,153,0,.08);border-color:rgba(255,153,0,.25);color:var(--amber)}
+.pk:active{transform:scale(.97)}
+.pin-err{font-size:7px;color:var(--red);margin-top:10px;height:14px;letter-spacing:1px}
+#mode-badge{display:flex;align-items:center;gap:7px;padding:4px 12px;border-radius:3px;border:1px solid;font-family:var(--head);font-size:7.5px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;cursor:pointer;transition:all .18s}
+#score-bar{position:fixed;top:44px;right:0;width:42px;background:rgba(1,4,6,.94);border-left:1px solid rgba(0,200,160,.08);z-index:60;display:none;flex-direction:column;align-items:center;gap:8px;padding:10px 4px;height:calc(100vh - 44px)}
+#score-bar.show{display:flex}
+.sb-item{text-align:center;width:100%}
+.sb-v{font-family:var(--head);font-size:11px;font-weight:800;color:var(--teal);line-height:1}
+.sb-l{font-size:4px;letter-spacing:1px;color:rgba(255,255,255,.15);text-transform:uppercase;margin-top:2px;font-family:var(--mono)}
+.sb-sep{width:24px;height:1px;background:rgba(255,255,255,.05)}
+.sb-contact{color:var(--amber)!important}
+#wall-flash{position:fixed;inset:0;pointer-events:none;z-index:400;opacity:0;background:radial-gradient(ellipse 100% 100% at 50% 50%,transparent 30%,rgba(200,10,10,.2) 70%,rgba(255,30,30,.42) 100%);transition:opacity .06s}
+/* ===== v18: SCOPE PHYSICS + TACTILE + BLEEDING (from v17) ===== */
+#tension-overlay{position:fixed;inset:0;pointer-events:none;z-index:395;opacity:0;transition:opacity .07s;background:radial-gradient(ellipse 72% 72% at 50% 50%,transparent 28%,rgba(0,28,18,.55) 60%,rgba(0,55,35,.85) 100%)}
+#tension-text{position:fixed;top:50%;left:50%;transform:translate(-50%,calc(-50% + 82px));pointer-events:none;z-index:396;opacity:0;transition:opacity .12s;font-family:var(--head);font-size:8px;font-weight:700;letter-spacing:4px;color:rgba(0,240,160,.75);text-shadow:0 0 14px rgba(0,200,120,.6);white-space:nowrap;text-align:center}
+#biopsy-bleed{position:fixed;inset:0;pointer-events:none;z-index:401;opacity:0;background:radial-gradient(ellipse 58% 58% at 50% 50%,rgba(210,5,5,.14) 0%,rgba(255,18,18,.4) 44%,transparent 66%);transition:opacity .08s}
+#scope-resistance-bar{position:absolute;bottom:92px;right:8px;width:3px;height:46px;background:rgba(255,255,255,.04);border-radius:2px;z-index:12;pointer-events:none}
+#scope-resistance-fill{width:100%;border-radius:2px;background:linear-gradient(to top,var(--green),var(--amber) 50%,var(--red));transition:height .05s;height:0%;position:absolute;bottom:0}
+#resistance-label{position:absolute;bottom:142px;right:2px;font-size:5px;letter-spacing:1px;color:rgba(0,200,160,.3);font-family:var(--head);writing-mode:vertical-rl;transform:rotate(180deg);pointer-events:none;z-index:12}
+@keyframes scopeShake{0%,100%{transform:translate(0,0)}15%{transform:translate(-2.5px,1.5px)}35%{transform:translate(2.2px,-2px)}55%{transform:translate(-1.5px,2.8px)}75%{transform:translate(2.5px,-1.2px)}90%{transform:translate(-1px,1.5px)}}
+.scope-shaking{animation:scopeShake .26s ease-out!important}
+/* ===== end v18 physics additions ===== */
+#seg-card{position:fixed;top:52px;right:calc(var(--bro-w) + 4px);width:196px;background:rgba(2,5,18,.97);border:1px solid rgba(10,122,255,.18);border-left:2px solid var(--blue);border-radius:4px;padding:14px;z-index:65;transform:translateX(14px);opacity:0;transition:transform .24s cubic-bezier(.22,1,.36,1),opacity .24s;pointer-events:none}
+#seg-card.show{transform:translateX(0);opacity:1;pointer-events:auto}
+#sc-gen{font-size:6px;letter-spacing:2.5px;color:rgba(10,122,255,.5);text-transform:uppercase;font-family:var(--head);margin-bottom:4px}
+#sc-name{font-family:var(--head);font-size:12px;font-weight:800;color:var(--blue);margin-bottom:2px;line-height:1.2}
+#sc-latin{font-size:6px;color:rgba(10,122,255,.4);letter-spacing:.5px;margin-bottom:10px;font-style:italic}
+#sc-body{font-size:7.5px;color:rgba(255,255,255,.32);line-height:1.9;font-family:var(--mono);margin-bottom:8px}
+#sc-pearl{padding:8px 10px;background:rgba(10,122,255,.06);border-left:2px solid rgba(10,122,255,.35);font-size:7px;color:rgba(10,122,255,.65);line-height:1.8;font-family:var(--mono)}
+#sc-dismiss{font-size:6px;color:rgba(255,255,255,.15);text-align:right;margin-top:8px;cursor:pointer}
+#sc-dismiss:hover{color:rgba(255,255,255,.35)}
+#instr-panel{position:fixed;top:44px;left:0;width:226px;background:rgba(2,5,12,.97);border-right:1px solid rgba(255,153,0,.1);border-bottom:1px solid rgba(255,153,0,.1);border-radius:0 0 4px 0;z-index:62;display:none}
+#instr-panel.show{display:block}
+.ip-hdr{padding:10px 14px;border-bottom:1px solid rgba(255,153,0,.08);display:flex;align-items:center;gap:8px}
+.ip-hdr-title{font-family:var(--head);font-size:7px;font-weight:700;letter-spacing:3px;color:var(--amber)}
+.live-pill{display:flex;align-items:center;gap:4px;background:rgba(255,34,68,.07);border:1px solid rgba(255,34,68,.18);border-radius:10px;padding:2px 7px;margin-left:auto}
+.live-dot{width:5px;height:5px;border-radius:50%;background:var(--red);animation:blink .7s infinite}
+.live-text{font-size:5.5px;letter-spacing:1px;color:var(--red)}
+.ip-metrics{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.ip-m{padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.025)}
+.ip-m:nth-child(even){border-left:1px solid rgba(255,255,255,.025)}
+.ip-ml{font-size:5.5px;letter-spacing:1.5px;color:rgba(255,255,255,.18);text-transform:uppercase}
+.ip-mv{font-family:var(--head);font-size:13px;font-weight:700;color:var(--teal);line-height:1.2}
+.ip-actions{padding:10px 14px;display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.03)}
+.ip-btn{padding:6px 10px;font-size:6.5px;letter-spacing:1.5px;font-family:var(--head);font-weight:700;border:1px solid;border-radius:3px;cursor:pointer;background:transparent;transition:all .12s;text-transform:uppercase}
+.ip-btn.amber{color:var(--amber);border-color:rgba(255,153,0,.25)}.ip-btn.amber:hover{background:rgba(255,153,0,.08)}
+.ip-btn.red{color:var(--red);border-color:rgba(255,34,68,.25)}.ip-btn.red:hover{background:rgba(255,34,68,.08)}
+.ip-btn.teal{color:var(--teal2);border-color:rgba(0,240,208,.25)}.ip-btn.teal:hover{background:rgba(0,240,208,.06)}
+#debrief{position:fixed;inset:0;z-index:9200;background:rgba(0,0,0,.9);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:20px}
+#debrief.show{display:flex}
+.db-box{background:#020810;border:1px solid rgba(0,240,208,.14);border-top:3px solid var(--teal2);border-radius:4px;width:700px;max-height:88vh;overflow-y:auto}
+.db-header{padding:24px 28px 16px;border-bottom:1px solid rgba(255,255,255,.04)}
+.db-institution{font-size:6.5px;letter-spacing:3px;color:rgba(0,200,160,.35);font-family:var(--mono);margin-bottom:8px}
+.db-title{font-family:var(--head);font-size:20px;font-weight:900;letter-spacing:4px;color:var(--teal2);margin-bottom:2px}
+.db-case{font-size:7.5px;color:rgba(255,255,255,.25);letter-spacing:1px;font-family:var(--mono)}
+.db-body{padding:20px 28px}
+.db-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+.db-metric{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);border-radius:4px;padding:14px 12px;text-align:center}
+.db-mv{font-family:var(--head);font-size:26px;font-weight:900;line-height:1}
+.db-ml{font-size:6px;letter-spacing:2px;color:rgba(255,255,255,.18);margin-top:5px;text-transform:uppercase;font-family:var(--mono)}
+.db-mv.good{color:var(--green)}.db-mv.warn{color:var(--amber)}.db-mv.bad{color:var(--red)}
+.db-section{margin-bottom:16px}
+.db-sh{font-size:6.5px;letter-spacing:3.5px;color:rgba(255,255,255,.15);text-transform:uppercase;font-family:var(--head);font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.04)}
+.db-row{display:flex;justify-content:space-between;align-items:center;font-size:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.02);color:rgba(255,255,255,.35);font-family:var(--mono)}
+.db-row span{color:var(--teal);font-family:var(--head);font-size:9px;font-weight:700}
+.db-found{display:flex;gap:6px;flex-wrap:wrap}
+.db-p{padding:5px 10px;border-radius:3px;font-size:7px;letter-spacing:1px;font-family:var(--head);font-weight:600}
+.db-p.yes{background:rgba(0,232,122,.07);border:1px solid rgba(0,232,122,.2);color:var(--green)}
+.db-p.no{background:rgba(255,34,68,.06);border:1px solid rgba(255,34,68,.14);color:var(--red)}
+.db-actions{display:flex;gap:8px;justify-content:flex-end;padding:16px 28px;border-top:1px solid rgba(255,255,255,.04)}
+.db-btn{padding:9px 22px;font-family:var(--head);font-size:8.5px;font-weight:700;letter-spacing:3px;border:1px solid;border-radius:3px;cursor:pointer;background:transparent;transition:all .15s;text-transform:uppercase}
+.db-btn.teal{color:var(--teal2);border-color:rgba(0,240,208,.3)}.db-btn.teal:hover{background:rgba(0,240,208,.07)}
+.db-btn.export{color:var(--amber);border-color:rgba(255,153,0,.3)}.db-btn.export:hover{background:rgba(255,153,0,.07)}
+#grab-indicator{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);border:1px solid var(--purple);border-radius:20px;padding:6px 16px;color:var(--purple);font-size:9px;letter-spacing:2px;font-family:var(--head);z-index:100;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+#grab-indicator.show{opacity:1}
+#kb-hint{position:fixed;bottom:76px;right:8px;width:168px;background:rgba(2,5,12,.95);border:1px solid rgba(255,255,255,.05);border-radius:4px;padding:10px;z-index:50;display:none;opacity:0;transition:opacity .2s}
+#kb-hint.show{display:block;opacity:1}
+.kbh-title{font-size:6px;letter-spacing:3px;color:rgba(255,255,255,.18);font-family:var(--head);margin-bottom:8px;text-transform:uppercase}
+.kb-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.025)}
+.kb-key{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:2px;padding:2px 5px;font-size:7px;color:rgba(255,255,255,.55);min-width:20px;text-align:center}
+.kb-act{font-size:6.5px;color:rgba(255,255,255,.25)}
+#patient-shell{position:fixed;inset:0;z-index:7000;display:none;background:#000}
+#patient-shell.show{display:block}
+#pat-canvas-wrap{position:absolute;inset:0}
+#pat-canvas-wrap canvas{width:100%!important;height:100%!important}
+#doc-panel-toggle{position:fixed;right:0;top:50%;transform:translateY(-50%);width:20px;height:64px;background:rgba(100,160,255,.08);border:1px solid rgba(100,160,255,.18);border-right:none;border-radius:6px 0 0 6px;z-index:9801;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:9px;color:rgba(100,160,255,.5);transition:all .2s}
+#doc-panel-toggle.visible{display:flex}
+#doc-panel-toggle:hover{background:rgba(100,160,255,.18);color:rgba(100,160,255,.9)}
+#doc-panel{position:fixed;top:0;right:-380px;width:360px;height:100vh;background:rgba(6,10,20,.98);border-left:1px solid rgba(100,160,255,.15);z-index:9800;transition:right .32s cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column;overflow-y:auto;box-shadow:-8px 0 48px rgba(0,0,0,.7)}
+#doc-panel.show{right:0}
+.dp-hdr{padding:18px 20px 14px;border-bottom:1px solid rgba(100,160,255,.1);background:rgba(10,50,100,.08)}
+.dp-title{font-family:var(--head);font-size:10px;font-weight:800;letter-spacing:4px;color:#7ab4e8;margin-bottom:2px}
+.dp-sub{font-size:6px;letter-spacing:2px;color:rgba(100,160,255,.35);font-family:var(--mono)}
+.dp-close{float:right;cursor:pointer;color:rgba(100,160,255,.4);font-size:14px;margin-top:-2px}
+.dp-close:hover{color:rgba(100,160,255,.8)}
+.dp-section{padding:14px 20px;border-bottom:1px solid rgba(100,160,255,.06)}
+.dp-sl{font-size:6px;letter-spacing:3px;color:rgba(100,160,255,.45);text-transform:uppercase;font-family:var(--head);font-weight:700;margin-bottom:10px}
+.dp-disease-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dp-d{padding:9px 10px;border-radius:4px;border:1px solid rgba(100,160,255,.1);background:rgba(100,160,255,.03);cursor:pointer;transition:all .14s;font-family:var(--head);font-size:7px;font-weight:700;letter-spacing:1px;color:rgba(255,255,255,.3);display:flex;align-items:center;gap:6px;user-select:none;text-transform:uppercase}
+.dp-d:hover{background:rgba(100,160,255,.08);color:rgba(255,255,255,.7);transform:translateX(2px)}
+.dp-d.on{border-color:rgba(100,160,255,.5);color:#fff}
+.dp-d.healthy.on{background:rgba(0,200,120,.1);border-color:rgba(0,200,120,.5);color:#00e87a}
+.dp-d.tumor.on{background:rgba(255,34,68,.08);border-color:rgba(255,34,68,.5);color:#ff2244}
+.dp-d.stenosis.on{background:rgba(255,153,0,.08);border-color:rgba(255,153,0,.5);color:#ff9900}
+.dp-d.mucus.on{background:rgba(153,85,255,.08);border-color:rgba(153,85,255,.5);color:#9955ff}
+.dp-d.asthma.on{background:rgba(255,120,120,.08);border-color:rgba(255,120,120,.5);color:#ff8888}
+.dp-d.copd.on{background:rgba(160,180,200,.08);border-color:rgba(160,180,200,.5);color:#aabbcc}
+.dp-d-icon{font-size:16px}
+.dp-trigger-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.dp-t{padding:10px 6px;border-radius:4px;border:1px solid rgba(100,160,255,.1);background:rgba(100,160,255,.03);cursor:pointer;transition:all .14s;font-family:var(--head);font-size:6px;font-weight:700;letter-spacing:1px;color:rgba(255,255,255,.35);text-align:center;user-select:none;text-transform:uppercase}
+.dp-t:hover{transform:translateY(-2px)}.dp-t:active{transform:scale(.96)}
+.dp-t .dp-ti{font-size:20px;display:block;margin-bottom:4px}
+.dp-t.smoke:hover{background:rgba(200,180,100,.1);border-color:rgba(200,180,100,.4);color:#d4c06a}
+.dp-t.exercise:hover{background:rgba(0,200,120,.1);border-color:rgba(0,200,120,.4);color:#00e87a}
+.dp-t.attack:hover{background:rgba(255,34,68,.1);border-color:rgba(255,34,68,.5);color:#ff2244}
+.dp-t.inhaler:hover{background:rgba(0,180,255,.1);border-color:rgba(0,180,255,.4);color:#00b4ff}
+.dp-t.cough:hover{background:rgba(255,153,0,.1);border-color:rgba(255,153,0,.4);color:#ff9900}
+.dp-t.reset-t:hover{background:rgba(0,240,208,.06);border-color:rgba(0,240,208,.4);color:#00f0d0}
+.dp-sev-row{display:flex;align-items:center;gap:10px}
+.dp-sev-labels{display:flex;justify-content:space-between;font-size:5.5px;color:rgba(100,160,255,.4);font-family:var(--mono);margin-bottom:4px}
+.dp-sev-val{font-family:var(--head);font-size:11px;font-weight:700;color:#7ab4e8;width:32px;text-align:right}
+.dp-view-opts{display:flex;gap:6px}
+.dp-vo{flex:1;padding:8px 4px;border-radius:4px;border:1px solid rgba(100,160,255,.1);background:rgba(100,160,255,.03);cursor:pointer;transition:all .14s;font-family:var(--head);font-size:6px;font-weight:700;letter-spacing:.5px;color:rgba(255,255,255,.3);text-align:center;user-select:none;text-transform:uppercase}
+.dp-vo:hover{background:rgba(100,160,255,.08);color:rgba(255,255,255,.7)}
+.dp-vo.on{background:rgba(100,160,255,.12);border-color:rgba(100,160,255,.4);color:#7ab4e8}
+.dp-nav-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dp-nav{padding:8px 6px;border-radius:4px;border:1px solid rgba(100,160,255,.1);background:rgba(100,160,255,.03);cursor:pointer;transition:all .14s;font-family:var(--head);font-size:6px;font-weight:700;letter-spacing:.5px;color:rgba(255,255,255,.35);text-align:center;user-select:none;text-transform:uppercase}
+.dp-nav:hover{background:rgba(100,160,255,.1);color:rgba(255,255,255,.8);transform:translateY(-1px)}
+.dp-status{margin:10px 0 0;padding:8px 10px;background:rgba(0,200,120,.05);border:1px solid rgba(0,200,120,.12);border-radius:4px;font-family:var(--mono);font-size:6px;color:rgba(0,200,120,.7);line-height:1.9}
+.dp-depth-wrap{padding:12px 20px;border-top:1px solid rgba(100,160,255,.06);margin-top:auto}
+.dp-depth-lbl{font-size:6px;letter-spacing:2px;color:rgba(100,160,255,.3);font-family:var(--mono);margin-bottom:5px}
+#dp-depth-bar{height:3px;background:rgba(100,160,255,.08);border-radius:2px;overflow:hidden}
+#dp-depth-fill{height:100%;background:linear-gradient(90deg,#4a7fa8,#7ab4e8);border-radius:2px;width:0%;transition:width .1s}
+</style>
+</head>
+<body>
+<div id="cur"></div>
+<div id="grab-indicator">🤲 GRAB TO ROTATE · SQUEEZE TO ZOOM</div>
+
+<div id="mode-sel">
+  <div class="ms-header">
+    <div class="ms-eyebrow">neumAC R&amp;I · Área Sanitaria de A Coruña y Cee</div>
+    <div class="ms-title">PNEUMO<b>·</b>VR<span class="ms-ver">v18</span></div>
+    <div class="ms-sub">Bronchoscopy Simulation System · Fusion Edition · Select operating mode</div>
+  </div>
+  <div class="ms-grid">
+    <div class="mc student" onclick="selectMode('student')">
+      <span class="mc-icon">🎓</span><div class="mc-name">Med Student</div>
+      <div class="mc-desc">Guided exploration with anatomical labels, clinical pearls and progressive hints</div>
+      <div class="mc-tags"><span class="mc-tag">Labels on</span><span class="mc-tag">Hints</span><span class="mc-tag">Seg cards</span></div>
+    </div>
+    <div class="mc resident" onclick="selectMode('resident')">
+      <div class="mc-lock">🔒</div><span class="mc-icon">🏥</span><div class="mc-name">Resident</div>
+      <div class="mc-desc">Full simulation: scoring, scope physics, wall collision, mucosal bleeding, debrief</div>
+      <div class="mc-tags"><span class="mc-tag">Scored</span><span class="mc-tag">Collision</span><span class="mc-tag">Bleeding</span></div>
+    </div>
+    <div class="mc patient" onclick="selectMode('patient')">
+      <span class="mc-icon">🫁</span><div class="mc-name">Patient</div>
+      <div class="mc-desc">Visual-only tour · Doctor controls hidden panel · ES/GL/EN · No clinical UI</div>
+      <div class="mc-tags"><span class="mc-tag">Visual only</span><span class="mc-tag">Doctor ctrl</span></div>
+    </div>
+    <div class="mc instructor" onclick="selectMode('instructor')">
+      <div class="mc-lock">🔒</div><span class="mc-icon">📋</span><div class="mc-name">Instructor</div>
+      <div class="mc-desc">Live observation, event injection, cough/bleed/secretion and session export</div>
+      <div class="mc-tags"><span class="mc-tag">Observer</span><span class="mc-tag">Inject</span></div>
+    </div>
+  </div>
+  <div class="ms-footer">
+    <div class="ms-institution">neumAC R&amp;I — Pulmonology Division · v18 Fusion</div>
+    <div class="ms-note">🔒 PIN: 1234 · Patient mode: press D for doctor panel · All processing local · No face detection</div>
+  </div>
+</div>
+
+<div id="pin-overlay">
+  <div class="pin-box">
+    <div class="pin-title" id="pin-title">RESIDENT MODE</div>
+    <div class="pin-sub">Enter 4-digit PIN to continue</div>
+    <div class="pin-dots">
+      <div class="pd" id="pd0"></div><div class="pd" id="pd1"></div>
+      <div class="pd" id="pd2"></div><div class="pd" id="pd3"></div>
+    </div>
+    <div class="pin-keys">
+      <div class="pk" onclick="pinKey('1')">1</div><div class="pk" onclick="pinKey('2')">2</div><div class="pk" onclick="pinKey('3')">3</div>
+      <div class="pk" onclick="pinKey('4')">4</div><div class="pk" onclick="pinKey('5')">5</div><div class="pk" onclick="pinKey('6')">6</div>
+      <div class="pk" onclick="pinKey('7')">7</div><div class="pk" onclick="pinKey('8')">8</div><div class="pk" onclick="pinKey('9')">9</div>
+      <div class="pk" onclick="pinKey('back')" style="font-size:9px">←</div>
+      <div class="pk" onclick="pinKey('0')">0</div>
+      <div class="pk" onclick="pinKey('cancel')" style="font-size:7px">✕</div>
+    </div>
+    <div class="pin-err" id="pin-err"></div>
+  </div>
+</div>
+
+<div id="patient-shell"><div id="pat-canvas-wrap"></div></div>
+<div id="doc-panel-toggle" onclick="toggleDocPanel()">◀ DR</div>
+
+<div id="doc-panel">
+  <div class="dp-hdr">
+    <span class="dp-close" onclick="toggleDocPanel()">✕</span>
+    <div class="dp-title">DOCTOR CONSOLE</div>
+    <div class="dp-sub">neumAC R&amp;I · Patient visual control · Press D to toggle</div>
+  </div>
+  <div class="dp-section">
+    <div class="dp-sl">Disease State</div>
+    <div class="dp-disease-grid">
+      <div class="dp-d healthy on" onclick="setPatDisease('healthy')"><span class="dp-d-icon">💚</span>Healthy</div>
+      <div class="dp-d tumor" onclick="setPatDisease('tumor')"><span class="dp-d-icon">🔴</span>Tumor LUL</div>
+      <div class="dp-d stenosis" onclick="setPatDisease('stenosis')"><span class="dp-d-icon">🟡</span>Stenosis RML</div>
+      <div class="dp-d mucus" onclick="setPatDisease('mucus')"><span class="dp-d-icon">🟣</span>Mucus Plug</div>
+      <div class="dp-d asthma" onclick="setPatDisease('asthma')"><span class="dp-d-icon">🩸</span>Asthma</div>
+      <div class="dp-d copd" onclick="setPatDisease('copd')"><span class="dp-d-icon">🫁</span>COPD</div>
+    </div>
+  </div>
+  <div class="dp-section">
+    <div class="dp-sl">Trigger Events</div>
+    <div class="dp-trigger-grid">
+      <div class="dp-t smoke" onclick="patTrigger('smoke')"><span class="dp-ti">🚬</span>Smoke</div>
+      <div class="dp-t exercise" onclick="patTrigger('exercise')"><span class="dp-ti">🏃</span>Exercise</div>
+      <div class="dp-t attack" onclick="patTrigger('attack')"><span class="dp-ti">⚡</span>Attack</div>
+      <div class="dp-t inhaler" onclick="patTrigger('inhaler')"><span class="dp-ti">💨</span>Inhaler</div>
+      <div class="dp-t cough" onclick="patTrigger('cough')"><span class="dp-ti">😮‍💨</span>Cough</div>
+      <div class="dp-t reset-t" onclick="patTrigger('reset')"><span class="dp-ti">↺</span>Reset</div>
+    </div>
+  </div>
+  <div class="dp-section">
+    <div class="dp-sl">Severity</div>
+    <div class="dp-sev-labels"><span>Mild</span><span>Moderate</span><span>Severe</span></div>
+    <div class="dp-sev-row">
+      <input type="range" id="dp-sev" min="0" max="100" value="50" oninput="setPatSeverity(this.value)" style="flex:1;accent-color:#7ab4e8">
+      <div class="dp-sev-val" id="dp-sev-val">50%</div>
+    </div>
+  </div>
+  <div class="dp-section">
+    <div class="dp-sl">View</div>
+    <div class="dp-view-opts">
+      <div class="dp-vo on" id="dv-ext" onclick="setDocView('ext')">🫁 Lungs</div>
+      <div class="dp-vo" id="dv-scope" onclick="setDocView('scope')">🔭 Scope</div>
+      <div class="dp-vo" id="dv-both" onclick="setDocView('both')">⊞ Both</div>
+    </div>
+  </div>
+  <div class="dp-section">
+    <div class="dp-sl">Navigate to</div>
+    <div class="dp-nav-grid">
+      <div class="dp-nav" onclick="patNavJump('trachea')">⬆ Trachea</div>
+      <div class="dp-nav" onclick="patNavJump('carina')">✖ Carina</div>
+      <div class="dp-nav" onclick="patNavJump('left')">← Left lung</div>
+      <div class="dp-nav" onclick="patNavJump('right')">→ Right lung</div>
+      <div class="dp-nav" onclick="patNavJump('lesion')" style="grid-column:1/-1">🎯 Jump to lesion</div>
+    </div>
+    <div class="dp-status" id="dp-status">Disease: Healthy · Sev: 50%<br>Trigger: — · View: Lungs</div>
+  </div>
+  <div class="dp-depth-wrap">
+    <div class="dp-depth-lbl">SCOPE DEPTH</div>
+    <div id="dp-depth-bar"><div id="dp-depth-fill"></div></div>
+  </div>
+</div>
+
+<div id="debrief">
+  <div class="db-box">
+    <div class="db-header">
+      <div class="db-institution">neumAC R&amp;I · Área Sanitaria de A Coruña y Cee · v18 Fusion</div>
+      <div class="db-title">SESSION DEBRIEF</div>
+      <div class="db-case">RESIDENT MODE · <span id="db-date"></span></div>
+    </div>
+    <div class="db-body">
+      <div class="db-grid">
+        <div class="db-metric"><div class="db-mv" id="db-score">—</div><div class="db-ml">Overall Score</div></div>
+        <div class="db-metric"><div class="db-mv" id="db-time">—</div><div class="db-ml">Procedure Time</div></div>
+        <div class="db-metric"><div class="db-mv" id="db-contacts">—</div><div class="db-ml">Wall Contacts</div></div>
+      </div>
+      <div class="db-section">
+        <div class="db-sh">Navigation Performance</div>
+        <div class="db-row">Time to first carina<span id="db-carina">—</span></div>
+        <div class="db-row">Path efficiency<span id="db-eff">—</span></div>
+        <div class="db-row">Segments visited<span id="db-segs">—</span></div>
+        <div class="db-row">Total movements<span id="db-moves">—</span></div>
+      </div>
+      <div class="db-section">
+        <div class="db-sh">Clinical Findings</div>
+        <div class="db-found" id="db-found"></div>
+      </div>
+      <div class="db-section">
+        <div class="db-sh">Procedure Actions</div>
+        <div class="db-row">Biopsies taken<span id="db-biops">—</span></div>
+        <div class="db-row">Annotations placed<span id="db-anns">—</span></div>
+        <div class="db-row">Mucosal bleed events<span id="db-bleeds" style="color:var(--red)">—</span></div>
+      </div>
+    </div>
+    <div class="db-actions">
+      <button class="db-btn export" onclick="exportDebrief()">EXPORT JSON</button>
+      <button class="db-btn teal" onclick="returnToModeSelect()">NEW SESSION</button>
+      <button class="db-btn teal" onclick="closeDebrief()">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<div id="splash" style="display:none">
+  <div class="sey">Pulmonology Division · Fusion Edition</div>
+  <div class="stitle">PNEUMO<b>·</b>VR</div>
+  <div class="sver">Anatomical Bronchoscopy Simulator · v18 Fusion</div>
+  <div style="margin-top:4px;text-align:center">
+    <div style="font-family:var(--head);font-size:11px;font-weight:700;letter-spacing:5px;color:var(--teal);opacity:.75">neumAC R&amp;I</div>
+    <div style="font-family:var(--mono);font-size:7px;letter-spacing:1.5px;color:var(--dim2);margin-top:2px">Área Sanitaria de A Coruña y Cee</div>
+  </div>
+  <div class="sln"></div>
+  <div class="sdesc">PBR dual-channel vasculature · Scope resistance physics · Mucosal bleeding on trauma<br>Biopsy site bleeding · Idle lung auto-rotation · Full v16 gesture engine · 23-segment anatomy cards</div>
+  <div class="sfeatures">
+    <div class="sf"><div class="sfi">🫁</div><div class="sfl">PBR Lungs</div></div>
+    <div class="sf"><div class="sfi">🩸</div><div class="sfl">Vasculature</div></div>
+    <div class="sf"><div class="sfi">⚡</div><div class="sfl">Resistance</div></div>
+    <div class="sf"><div class="sfi">💊</div><div class="sfl">Disease VFX</div></div>
+    <div class="sf"><div class="sfi">🤲</div><div class="sfl">Grab &amp; Zoom</div></div>
+    <div class="sf"><div class="sfi">🩸</div><div class="sfl">Bleeding</div></div>
+    <div class="sf"><div class="sfi">🔭</div><div class="sfl">Fisheye</div></div>
+    <div class="sf"><div class="sfi">📋</div><div class="sfl">Debrief</div></div>
+  </div>
+  <button id="sbtn"><span>LAUNCH SYSTEM</span></button>
+  <div class="snote">🤲 Grab lung to rotate · Squeeze to zoom · 👆 Point to navigate · [D] Doctor panel · [?] Keys</div>
+</div>
+
+<div id="app" style="display:none">
+  <div id="tb">
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="brand">PNEUMO<b>·</b>VR<sub>v18</sub></div>
+      <div style="border-left:1px solid var(--bdr);padding-left:12px;line-height:1.3">
+        <div style="font-family:var(--head);font-size:8px;font-weight:700;letter-spacing:3px;color:var(--teal);opacity:.8">neumAC R&amp;I</div>
+        <div style="font-family:var(--mono);font-size:5.5px;letter-spacing:1px;color:var(--dim2);margin-top:1px">Área Sanitaria de A Coruña y Cee</div>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab" id="tab-ov" onclick="setView('overview')">🫁 EXTERNAL</div>
+      <div class="tab on" id="tab-du" onclick="setView('dual')">⊞ DUAL</div>
+      <div class="tab" id="tab-br" onclick="setView('scope')">🔭 SCOPE</div>
+    </div>
+    <div class="tb-stats">
+      <div class="ts"><div class="tsl">FPS</div><div class="tsv" id="fps-v">—</div></div>
+      <div class="ts"><div class="tsl">Depth</div><div class="tsv" id="dep-v">0mm</div></div>
+      <div class="ts"><div class="tsl">Segment</div><div class="tsv" id="seg-v">—</div></div>
+      <div class="ts"><div class="tsl">Deflect</div><div class="tsv" id="defl-v">0°</div></div>
+      <div class="ts"><div class="tsl">Resist</div><div class="tsv" id="resist-v" style="color:var(--green)">0%</div></div>
+      <div class="ts"><div class="tsl">Time</div><div class="tsv" id="ses-t">00:00</div></div>
+      <div class="ts"><div class="tsl">Hands</div><div class="tsv" id="hn-v">0</div></div>
+    </div>
+    <div class="spill"><div class="sdot" id="sdot"></div><span class="spillt" id="sdot-l">INIT</span></div>
+    <div id="mode-badge" onclick="returnToModeSelect()">🎓 STUDENT</div>
+  </div>
+
+  <div id="views">
+    <div id="ext-view">
+      <canvas id="c-ext"></canvas>
+      <div id="ext-label">BILATERAL LUNG · External View · Click=Teleport · Drag=Rotate · Scroll=Zoom</div>
+      <svg id="scope-svg">
+        <defs>
+          <radialGradient id="sg" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#00f0d0" stop-opacity=".9"/>
+            <stop offset="55%" stop-color="#00f0d0" stop-opacity=".3"/>
+            <stop offset="100%" stop-color="#00f0d0" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="gb2"><feGaussianBlur stdDeviation="2.5"/></filter>
+        </defs>
+        <g id="svg-group" opacity="0">
+          <circle id="svh" cx="0" cy="0" r="20" fill="url(#sg)" filter="url(#gb2)"/>
+          <circle id="svr2" cx="0" cy="0" r="16" fill="none" stroke="#00f0d0" stroke-width=".5" stroke-dasharray="3 3" opacity=".25"/>
+          <circle id="svr" cx="0" cy="0" r="9" fill="none" stroke="#00f0d0" stroke-width="1" opacity=".65"/>
+          <circle id="svd" cx="0" cy="0" r="3.5" fill="#00f0d0" opacity=".9"/>
+          <line id="svhl" x1="-22" y1="0" x2="22" y2="0" stroke="#00f0d0" stroke-width=".5" opacity=".35"/>
+          <line id="svvl" x1="0" y1="-22" x2="0" y2="22" stroke="#00f0d0" stroke-width=".5" opacity=".35"/>
+        </g>
+      </svg>
+    </div>
+    <div id="bro-view">
+      <canvas id="c-bro"></canvas>
+      <div id="bro-vig"></div>
+      <div id="bro-hud">
+        <div class="bh" id="bh-tl">VIRTUAL BRONCHOSCOPE v18<br>Anatomical · Fisheye 120°</div>
+        <div class="bh" id="bh-tr">DEPTH <span id="bh-dep">0</span>mm<br>t=<span id="bh-t">0.000</span></div>
+        <div class="bh" id="bh-bl">MODE <span id="bh-mode">NAV</span><br>GEN <span id="bh-gen">0</span></div>
+        <div class="bh" id="bh-br"><span id="bh-seg">TRACHEA</span><br>ACTIVE</div>
+      </div>
+      <div id="xhair"><div class="xr xr1"></div><div class="xr xr2"></div></div>
+      <div id="dbar"><div id="dfill"></div></div>
+      <div id="scope-resistance-bar"><div id="scope-resistance-fill"></div></div>
+      <div id="resistance-label">RESIST</div>
+      <div id="aring"></div>
+      <div id="hold-prog"><svg viewBox="0 0 64 64"><circle id="hold-arc" cx="32" cy="32" r="30"/></svg></div>
+      <div id="palert">⚠ PATHOLOGY</div>
+      <div id="bsel">
+        <div class="bso lo" id="bsl-l">◀ LEFT</div>
+        <div id="bsel-mid">TILT TO SELECT<br>HOLD 1s TO ENTER</div>
+        <div class="bso lo" id="bsl-r">RIGHT ▶</div>
+      </div>
+      <div id="defl-ind"><canvas id="defl-canvas" width="80" height="80"></canvas></div>
+      <div id="ct-overlay"><canvas id="ct-canvas" width="72" height="72"></canvas></div>
+    </div>
+  </div>
+
+  <div id="lp">
+    <div class="panel-hdr" onclick="togglePanel('lp')">
+      <span class="ph-t">Gesture Engine v18</span>
+      <span class="ph-arr open" id="lp-arr">▶</span>
+    </div>
+    <div class="panel-body" id="lp-body">
+      <div class="grow">
+        <div class="gring"><svg viewBox="0 0 44 44"><circle class="gr-bg" cx="22" cy="22" r="18"/><circle class="gr-fg" id="gr-fg" cx="22" cy="22" r="18"/></svg><div class="grv" id="gr-v">0%</div></div>
+        <div><div id="gname">—</div><div id="gsub">Show hand</div><div id="gbadge">WAITING</div></div>
+      </div>
+      <div id="tracking-quality"></div>
+      <div class="hrow"><div class="hl">Point</div><div class="ht"><div class="hf" id="hb-pt" style="width:0%"></div></div></div>
+      <div class="hrow"><div class="hl">Open</div><div class="ht"><div class="hf" id="hb-op" style="width:0%"></div></div></div>
+      <div class="hrow"><div class="hl">Pinch</div><div class="ht"><div class="hf" id="hb-pi" style="width:0%"></div></div></div>
+      <div class="br"><span class="brl">RIGHT</span><span class="brv" id="rp-v">0%</span></div>
+      <div class="btrack"><div class="bf b" id="rb" style="width:0%"></div></div>
+      <div class="br"><span class="brl">LEFT</span><span class="brv" id="lp-v">0%</span></div>
+      <div class="btrack"><div class="bf r" id="lb" style="width:0%"></div></div>
+      <div class="fg">
+        <div class="fc"><div class="fcl">LEFT</div><div class="fbs" id="l-fds"><div class="fb" style="height:12px"></div><div class="fb" style="height:16px"></div><div class="fb" style="height:18px"></div><div class="fb" style="height:16px"></div><div class="fb" style="height:12px"></div></div><div class="fcg" id="l-g">—</div></div>
+        <div class="fc"><div class="fcl">RIGHT</div><div class="fbs" id="r-fds"><div class="fb" style="height:12px"></div><div class="fb" style="height:16px"></div><div class="fb" style="height:18px"></div><div class="fb" style="height:16px"></div><div class="fb" style="height:12px"></div></div><div class="fcg b" id="r-g">—</div></div>
+      </div>
+      <div class="gmap">👆 <span>Point</span> → Advance<br>✋ <span>Open</span> → Retract<br>🤲 <span>Grab(2 hands)</span> → Rotate/Zoom<br>✌ <span>Peace</span> → Rotate model<br>🤏 <span>Pinch+hold</span> → Clinical<br>👊 <span>Fist</span> → Reset</div>
+    </div>
+  </div>
+
+  <div id="rp">
+    <div class="panel-hdr" onclick="togglePanel('rp')"><span class="ph-t">Navigation &amp; Clinical</span><span class="ph-arr open" id="rp-arr">▶</span></div>
+    <div id="rp-body">
+      <canvas id="mapcan" width="188" height="106" style="margin:7px 12px 0;width:calc(100% - 24px);height:106px
 ;display:block;border:1px solid rgba(0,200,160,.08);border-radius:1px;background:rgba(0,0,0,.4)"></canvas>
       <div class="spos">📍 <span id="spos-l">TRACHEA</span></div>
       <div class="cmg">
