@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <style>
 /* ============================================================
    PNEUMO·VR SURGICAL — Design System v20
@@ -179,7 +180,20 @@ body::after {
 /* Bro vignette */
 #bro-vig {
   position:absolute; inset:0; pointer-events:none; z-index:5;
-  background:radial-gradient(ellipse 68% 68% at 50% 50%,transparent 44%,rgba(0,0,0,.94) 70%,#000 100%);
+  background:radial-gradient(ellipse 62% 62% at 50% 50%,transparent 36%,rgba(0,0,0,.7) 58%,rgba(0,0,0,.97) 72%,#000 100%);
+}
+/* Secondary scope barrel effect */
+#bro-view::before {
+  content:''; position:absolute; inset:0; pointer-events:none; z-index:6;
+  border-radius:0;
+  box-shadow:inset 0 0 0 2px rgba(14,207,176,.06),
+             inset 0 0 60px rgba(0,0,0,.4);
+}
+/* Scope frame — subtle circular mask */
+#bro-view::after {
+  content:''; position:absolute; inset:0; pointer-events:none; z-index:7;
+  background:
+    radial-gradient(circle 48% at 50% 50%, transparent 95%, rgba(0,0,0,.85) 100%);
 }
 
 /* Bro HUD */
@@ -194,14 +208,34 @@ body::after {
 #bh-bl { bottom:54px; left:14px; }
 #bh-br { bottom:54px; right:14px; text-align:right; }
 
-/* Crosshair */
-#xhair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:32px; height:32px; pointer-events:none; z-index:11; opacity:.4; }
-#xhair::before, #xhair::after { content:''; position:absolute; background:rgba(14,207,176,.6); }
-#xhair::before { width:1px; height:32px; left:50%; transform:translateX(-50%); }
-#xhair::after  { width:32px; height:1px; top:50%; transform:translateY(-50%); }
-.xr { position:absolute; top:50%; left:50%; border-radius:50%; transform:translate(-50%,-50%); border:1px solid rgba(14,207,176,.35); }
-.xr1 { width:10px; height:10px; }
-.xr2 { width:24px; height:24px; border-color:rgba(14,207,176,.15); }
+/* Crosshair — clinical reticle */
+#xhair {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  width:48px; height:48px; pointer-events:none; z-index:11;
+}
+/* Gap crosshair — 4 segments, no centre cross */
+#xhair::before,#xhair::after { content:''; position:absolute; background:rgba(14,207,176,.55); }
+#xhair::before { width:1px; height:10px; left:50%; transform:translateX(-50%); top:0; }
+#xhair::after  { width:10px; height:1px; top:50%; transform:translateY(-50%); left:0; }
+.xr {
+  position:absolute; top:50%; left:50%;
+  border-radius:50%; transform:translate(-50%,-50%);
+  border:1px solid rgba(14,207,176,.3);
+}
+.xr1 { width:8px; height:8px; border-color:rgba(14,207,176,.7); }
+.xr2 { width:28px; height:28px; border-color:rgba(14,207,176,.18); }
+/* Bottom and right segments of gap crosshair */
+#xhair-b { position:absolute; width:1px; height:10px; background:rgba(14,207,176,.55); left:50%; transform:translateX(-50%); bottom:0; }
+#xhair-r { position:absolute; height:1px; width:10px; background:rgba(14,207,176,.55); top:50%; transform:translateY(-50%); right:0; }
+/* Rotation tick marks */
+#xhair-tl,#xhair-tr,#xhair-bl,#xhair-br {
+  position:absolute; width:6px; height:1px; background:rgba(14,207,176,.2);
+}
+#xhair-tl { top:8px; left:8px; transform:rotate(-45deg); }
+#xhair-tr { top:8px; right:8px; transform:rotate(45deg); }
+#xhair-bl { bottom:8px; left:8px; transform:rotate(45deg); }
+#xhair-br { bottom:8px; right:8px; transform:rotate(-45deg); }
 
 /* Deflection bar */
 #dbar { position:absolute; right:14px; top:50%; transform:translateY(-50%); width:2px; height:44%; background:rgba(255,255,255,.04); border-radius:2px; z-index:10; }
@@ -212,14 +246,24 @@ body::after {
 /* Pathology alert */
 #palert {
   position:absolute; top:50%; left:50%;
-  transform:translate(-50%,-50%) translateY(64px);
-  background:rgba(8,2,4,.95); border:1px solid var(--red);
-  border-radius:2px; padding:8px 18px; font-size:8px;
-  letter-spacing:3px; color:var(--red); font-family:var(--head);
+  transform:translate(-50%,-50%) translateY(72px);
+  background:rgba(8,2,4,.97); border:1px solid var(--red);
+  border-radius:2px; padding:8px 22px; font-size:9px;
+  letter-spacing:4px; color:var(--red); font-family:var(--head);
   font-weight:700; opacity:0; transition:opacity .25s;
   pointer-events:none; z-index:20; text-align:center; white-space:nowrap;
+  box-shadow:0 0 20px rgba(240,54,74,.25), 0 0 40px rgba(240,54,74,.1);
 }
 #palert.show { opacity:1; }
+/* Pathology proximity glow — injected via JS when near */
+#path-glow {
+  position:absolute; inset:0; pointer-events:none; z-index:8;
+  opacity:0; transition:opacity .4s;
+  background:radial-gradient(ellipse 55% 55% at 50% 50%,
+    rgba(240,54,74,.06) 0%, transparent 70%);
+}
+#path-glow.near  { opacity:.6; }
+#path-glow.found { opacity:1; background:radial-gradient(ellipse 55% 55% at 50% 50%,rgba(240,54,74,.12) 0%,transparent 70%); }
 
 /* Airway ring */
 #aring {
@@ -451,101 +495,127 @@ input[type=range]::-webkit-slider-thumb {
 /* ═══════════════════════════════════════════
    SPLASH SCREEN
 ═══════════════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   BOOT SCREEN
+═══════════════════════════════════════════ */
 #splash {
-  position:fixed; inset:0; z-index:9000;
-  background:var(--bg);
+  position:fixed; inset:0; z-index:9000; background:var(--bg);
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:0; overflow:hidden;
+  overflow:hidden;
 }
-/* Grid background */
+/* Fine grid */
 #splash::before {
-  content:''; position:absolute; inset:0;
+  content:''; position:absolute; inset:0; pointer-events:none;
   background-image:
-    linear-gradient(rgba(14,207,176,.04) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(14,207,176,.04) 1px,transparent 1px);
-  background-size:60px 60px;
-  animation:gridDrift 28s linear infinite;
+    linear-gradient(rgba(14,207,176,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(14,207,176,.03) 1px,transparent 1px);
+  background-size:48px 48px;
+  animation:gridDrift 32s linear infinite;
 }
-@keyframes gridDrift { 0%{transform:translate(0,0)} 100%{transform:translate(60px,60px)} }
-/* Radial fade over grid */
+@keyframes gridDrift { 0%{transform:translate(0,0)} 100%{transform:translate(48px,48px)} }
+/* Radial mask */
 #splash::after {
-  content:''; position:absolute; inset:0;
-  background:radial-gradient(ellipse 70% 70% at 50% 50%,transparent 0%,var(--bg) 72%);
-  pointer-events:none;
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(ellipse 65% 65% at 50% 50%,transparent 0%,var(--bg) 75%);
+}
+/* Horizontal scan line — surgical feel */
+@keyframes scanline {
+  0%   { top:-2px; opacity:0; }
+  5%   { opacity:.6; }
+  95%  { opacity:.6; }
+  100% { top:100%; opacity:0; }
+}
+#splash .scan {
+  position:absolute; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(14,207,176,.35),transparent);
+  animation:scanline 4s cubic-bezier(.4,0,.6,1) infinite;
+  pointer-events:none; z-index:3;
 }
 
 .splash-inner {
-  position:relative; z-index:2;
-  display:flex; flex-direction:column; align-items:center; gap:0;
-  animation:splashIn .8s cubic-bezier(.22,1,.36,1) both;
+  position:relative; z-index:4;
+  display:flex; flex-direction:column; align-items:center;
+  animation:splashIn .9s cubic-bezier(.22,1,.36,1) both;
 }
-@keyframes splashIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+@keyframes splashIn { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
 
+/* Eyebrow */
 .sey {
-  font-family:var(--head); font-size:8px; letter-spacing:8px;
-  color:var(--text3); text-transform:uppercase; margin-bottom:20px;
+  font-family:var(--mono); font-size:9px; letter-spacing:6px;
+  color:var(--text3); text-transform:uppercase; margin-bottom:24px;
+  display:flex; align-items:center; gap:12px;
 }
+.sey::before,.sey::after {
+  content:''; display:block; width:32px; height:1px;
+  background:rgba(14,207,176,.25);
+}
+
+/* Main title */
 .stitle {
   font-family:var(--head); font-weight:800;
-  font-size:clamp(52px,9vw,108px);
-  letter-spacing:-1px; color:var(--text); line-height:.9;
-  text-align:center; margin-bottom:6px;
+  font-size:clamp(64px,10vw,120px);
+  letter-spacing:-2px; color:var(--text); line-height:.88;
+  text-align:center; margin-bottom:8px;
 }
 .stitle em { color:var(--teal2); font-style:normal; }
-.stitle .stitle-dot { color:rgba(14,207,176,.35); }
+.stitle .stitle-dot { color:rgba(14,207,176,.4); }
+
+/* Subtitle */
 .sver {
   font-family:var(--serif); font-style:italic;
-  font-size:clamp(14px,1.8vw,22px); color:var(--text3);
-  letter-spacing:1px; margin-bottom:28px; text-align:center;
+  font-size:clamp(15px,1.8vw,22px); color:var(--text2);
+  letter-spacing:.5px; margin-bottom:32px; text-align:center;
 }
 
-/* Institution block */
-.splash-inst {
-  display:flex; flex-direction:column; align-items:center; gap:3px;
-  margin-bottom:28px;
+/* Specs strip */
+.splash-specs {
+  display:flex; gap:0; margin-bottom:36px;
+  border:1px solid var(--border); border-radius:3px; overflow:hidden;
 }
-.splash-inst-name { font-family:var(--head); font-size:10px; font-weight:700; letter-spacing:5px; color:var(--teal); opacity:.9; }
-.splash-inst-sub { font-size:9px; color:var(--text3); letter-spacing:1px; }
+.splash-spec {
+  padding:8px 20px; border-right:1px solid var(--border);
+  text-align:center;
+}
+.splash-spec:last-child { border-right:none; }
+.ss-label { font-size:7px; letter-spacing:2px; color:var(--text3); text-transform:uppercase; margin-bottom:3px; font-family:var(--head); }
+.ss-val { font-family:var(--head); font-size:12px; font-weight:700; color:var(--teal); letter-spacing:.5px; }
 
-/* Divider line */
+/* Divider */
 .sln {
-  width:240px; height:1px;
-  background:linear-gradient(90deg,transparent,rgba(14,207,176,.3),transparent);
-  margin-bottom:28px;
+  width:280px; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(14,207,176,.25),transparent);
+  margin-bottom:32px;
 }
-
-/* Feature cards */
-.sfeatures { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; max-width:600px; margin-bottom:36px; }
-.sf {
-  display:flex; flex-direction:column; align-items:center; gap:6px;
-  background:rgba(14,207,176,.02); border:1px solid rgba(14,207,176,.1);
-  border-radius:4px; padding:12px 10px; width:76px;
-  transition:all .2s;
-}
-.sf:hover { background:rgba(14,207,176,.06); border-color:rgba(14,207,176,.25); transform:translateY(-2px); }
-.sfi { font-size:18px; }
-.sfl { font-size:7px; letter-spacing:.5px; color:var(--text3); text-align:center; line-height:1.5; font-family:var(--head); }
 
 /* Launch button */
 #sbtn {
-  background:transparent;
-  border:1px solid var(--teal);
-  color:var(--teal);
+  background:transparent; border:1px solid var(--teal); color:var(--teal);
   font-family:var(--head); font-weight:700; font-size:10px;
   letter-spacing:8px; text-transform:uppercase;
-  padding:16px 64px; border-radius:3px; cursor:pointer;
-  transition:all .2s; position:relative; overflow:hidden; outline:none;
-  margin-bottom:16px;
+  padding:18px 72px; border-radius:2px; cursor:pointer;
+  transition:all .25s; position:relative; overflow:hidden; outline:none;
+  margin-bottom:18px;
 }
 #sbtn::before {
   content:''; position:absolute; inset:0; background:var(--teal);
-  transform:translateX(-100%); transition:transform .2s;
+  transform:translateX(-101%); transition:transform .25s cubic-bezier(.22,1,.36,1);
 }
-#sbtn:hover { color:var(--bg); }
+#sbtn:hover { color:var(--bg); letter-spacing:10px; }
 #sbtn:hover::before { transform:translateX(0); }
 #sbtn span { position:relative; z-index:1; }
 
-.snote { font-size:8px; letter-spacing:1.5px; color:var(--text3); text-align:center; max-width:480px; line-height:2; }
+/* Institution footer */
+.splash-foot {
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--head); font-size:8px; font-weight:700;
+  letter-spacing:4px; color:rgba(14,207,176,.45); text-transform:uppercase;
+}
+.splash-foot::before,.splash-foot::after {
+  content:''; display:block; width:20px; height:1px; background:rgba(14,207,176,.2);
+}
+
+.snote { font-size:8px; letter-spacing:1.5px; color:var(--text3); text-align:center; max-width:500px; line-height:2.2; margin-top:10px; }
+.sf,.sfi,.sfl,.sfeatures,.splash-inst,.splash-inst-name,.splash-inst-sub { display:none; }
 
 /* ═══════════════════════════════════════════
    MODE SELECTOR
@@ -901,6 +971,85 @@ input[type=range]::-webkit-slider-thumb {
 #dp-depth-bar { height:3px; background:rgba(100,160,255,.08); border-radius:2px; overflow:hidden; }
 #dp-depth-fill { height:100%; background:linear-gradient(90deg,#4a7fa8,#7ab4e8); border-radius:2px; width:0%; transition:width .1s; }
 
+
+/* ═══════════════════════════════════════════
+   SURGICAL PLANNING PANEL
+═══════════════════════════════════════════ */
+#sp-panel {
+  position:absolute; top:calc(var(--bar-h) + 8px); right:8px;
+  width:200px;
+  background:var(--surface); border:1px solid var(--border);
+  border-top:2px solid var(--coral, #f0724a);
+  border-radius:4px; backdrop-filter:blur(24px); z-index:50;
+  overflow:hidden;
+  --coral:#e8683a;
+}
+.sp-section { padding:10px 13px; border-bottom:1px solid var(--border); }
+.sp-label { font-size:7px; letter-spacing:2.5px; color:var(--text3); text-transform:uppercase; font-family:var(--head); font-weight:600; margin-bottom:8px; }
+
+/* Target lesions */
+.sp-target {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 10px; margin-bottom:4px;
+  background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.05);
+  border-radius:3px; cursor:pointer; transition:all .15s;
+}
+.sp-target:hover { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.1); }
+.sp-target.active { background:rgba(240,54,74,.08); border-color:rgba(240,54,74,.3); }
+.spt-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.spt-info { flex:1; min-width:0; }
+.spt-name { font-size:9px; font-weight:600; color:var(--text); font-family:var(--head); letter-spacing:.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.spt-sub  { font-size:7px; color:var(--text3); margin-top:1px; }
+.spt-dist { font-size:9px; color:var(--teal); font-family:var(--mono); flex-shrink:0; }
+
+/* Path quality meter */
+.sp-path-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.sp-path-label { font-size:8px; color:var(--text2); }
+.sp-path-val { font-family:var(--head); font-size:12px; font-weight:700; color:var(--green); }
+.sp-path-val.warn  { color:var(--amber); }
+.sp-path-val.alert { color:var(--red); }
+.sp-bar { height:3px; background:rgba(255,255,255,.05); border-radius:2px; overflow:hidden; margin-bottom:8px; }
+.sp-bar-fill { height:100%; border-radius:2px; transition:width .3s; }
+
+/* Risk zones */
+.sp-risk { display:flex; align-items:center; gap:7px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.03); font-size:8px; }
+.sp-risk:last-child { border-bottom:none; }
+.sp-risk-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.sp-risk-name { flex:1; color:var(--text2); }
+.sp-risk-prox { font-size:8px; font-family:var(--mono); }
+.sp-risk-prox.safe   { color:var(--green); }
+.sp-risk-prox.caution{ color:var(--amber); }
+.sp-risk-prox.danger { color:var(--red); }
+
+/* Approach recommendation */
+.sp-recommend {
+  background:rgba(14,207,176,.05); border:1px solid rgba(14,207,176,.15);
+  border-radius:3px; padding:8px 10px; font-size:8px; color:var(--text2); line-height:1.7;
+}
+.sp-recommend strong { color:var(--teal); font-weight:600; }
+
+
+/* ═══════════════════════════════════════════
+   VITAL SIGNS — topbar live indicators
+═══════════════════════════════════════════ */
+.vital-strip {
+  display:flex; align-items:center; gap:10px;
+  padding:0 12px; border-left:1px solid var(--border);
+  margin-left:8px; flex-shrink:0;
+}
+.vital {
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.vital-label { font-size:6px; letter-spacing:2px; color:var(--text3); text-transform:uppercase; font-family:var(--head); }
+.vital-val { font-family:var(--head); font-size:12px; font-weight:700; line-height:1; }
+.vital-val.hb  { color:#ff4466; }
+.vital-val.br  { color:#44bbff; }
+.vital-val.res { color:var(--green); }
+
+/* Miniature waveform canvas */
+#hb-wave-canvas { display:block; }
+#br-wave-canvas { display:block; }
+
 /* ═══════════════════════════════════════════
    VR STATUS INDICATOR (topbar)
 ═══════════════════════════════════════════ */
@@ -956,11 +1105,47 @@ input[type=range]::-webkit-slider-thumb {
 .pl-title { font-family:var(--head); font-size:8px; font-weight:700; letter-spacing:2.5px; color:var(--amber); text-transform:uppercase; }
 .pl-sub { font-size:7px; color:var(--text3); margin-top:2px; letter-spacing:.5px; }
 .pl-action { font-family:var(--head); font-size:7px; font-weight:700; letter-spacing:2px; color:var(--amber); border:1px solid rgba(245,166,35,.3); border-radius:2px; padding:4px 10px; text-transform:uppercase; flex-shrink:0; }
+#server-loader { margin:6px 14px 4px; display:flex; gap:4px; align-items:center; }
+#server-loader input[type=text] { flex:1; font-family:var(--mono); font-size:8px; background:rgba(255,255,255,.05); border:1px solid var(--border); border-radius:2px; padding:4px 6px; color:var(--text2); min-width:0; }
+#server-loader input[type=text]::placeholder { color:var(--text3); }
+.sl-btn { font-family:var(--head); font-size:7px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; padding:5px 8px; border-radius:2px; border:1px solid rgba(14,207,176,.3); background:transparent; color:var(--teal); cursor:pointer; white-space:nowrap; flex-shrink:0; }
+.sl-btn:hover { background:rgba(14,207,176,.08); }
+.sl-btn:disabled { opacity:.4; cursor:not-allowed; }
+#server-status { margin:0 14px 6px; font-size:9px; font-family:var(--mono); color:var(--text3); min-height:14px; display:none; padding:4px 8px; border-radius:3px; }
+#server-status.show { display:block; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); }
+#server-status.ok { color:var(--teal); }
+#server-status.err { color:var(--red); }
+#view-toggle { display:flex; gap:4px; margin:6px 14px 2px; }
+.vt-btn { flex:1; font-family:var(--head); font-size:7px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; padding:5px 4px; border-radius:2px; border:1px solid var(--border); background:transparent; color:var(--text3); cursor:pointer; text-align:center; transition:all .15s; }
+.vt-btn:hover { color:var(--text2); border-color:rgba(255,255,255,.2); }
+.vt-btn.vt-on { background:rgba(14,207,176,.08); border-color:rgba(14,207,176,.4); color:var(--teal); }
+.vt-btn.vt-empty.vt-on { background:rgba(139,92,246,.08); border-color:rgba(139,92,246,.4); color:var(--purple); }
+#route-panel { margin:0 14px 8px; display:none; }
+#route-panel.show { display:block; }
+.rt-hdr { font-family:var(--head); font-size:7px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--amber); margin-bottom:6px; }
+.rt-seg { display:flex; align-items:center; gap:6px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.04); font-size:9px; color:var(--text2); }
+.rt-seg:last-child { border-bottom:none; }
+.rt-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.rt-name { flex:1; font-family:var(--mono); }
+.rt-r { color:var(--text3); font-size:8px; min-width:38px; text-align:right; }
+.rt-warn { color:var(--amber); font-size:8px; }
+.spt-btn { font-family:var(--head); font-size:6px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; padding:3px 6px; border-radius:2px; border:1px solid rgba(14,207,176,.3); background:transparent; color:var(--teal); cursor:pointer; flex-shrink:0; }
+.spt-btn:hover { background:rgba(14,207,176,.08); }
+#scope-sel { margin:4px 14px 2px; display:flex; gap:4px; align-items:center; }
+#scope-sel label { font-size:8px; color:var(--text3); font-family:var(--head); letter-spacing:1px; text-transform:uppercase; flex-shrink:0; }
+#scope-sel select { flex:1; font-family:var(--mono); font-size:9px; background:rgba(255,255,255,.05); border:1px solid var(--border); border-radius:2px; padding:3px 5px; color:var(--text2); }
+#lumen-hud { margin:2px 14px 6px; font-size:9px; font-family:var(--mono); color:var(--teal); display:flex; justify-content:space-between; }
+#lumen-hud span { color:var(--text3); }
+
+/* ── Planning mode: hide training UI ── */
+#lp, #bpanel-l, #score-bar, #debrief, #biopsy-bleed { display:none !important; }
 </style>
 </head>
 <body>
 <div id="cur"></div>
-<div id="grab-indicator">🤲 GRAB TO ROTATE · SQUEEZE TO ZOOM</div>
+<!-- Single picker — select GLTF and JSON together (Ctrl/Cmd+click both) -->
+<input type="file" id="patient-picker" accept=".glb,.gltf,.json" multiple style="display:none">
+<div id="grab-indicator"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M4 8V5a1 1 0 012 0v3M6 8V4a1 1 0 012 0v4M8 8V5a1 1 0 012 0v3M10 8v1a4 4 0 01-4 4H5a3 3 0 01-3-3V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>GRAB TO ROTATE · SQUEEZE TO ZOOM</div>
 
 <!-- ═══════════════════════════════════════════
      DEBRIEF
@@ -991,13 +1176,21 @@ input[type=range]::-webkit-slider-thumb {
 
 <!-- BOOT SCREEN -->
 <div id="splash" style="display:flex">
+  <div class="scan"></div>
   <div class="splash-inner">
-    <div class="sey">neumAC R&amp;I · Área Sanitaria de A Coruña y Cee</div>
+    <div class="sey">neumAC R&amp;I</div>
     <div class="stitle">PNEUMO<span class="stitle-dot">·</span><em>VR</em></div>
     <div class="sver">Bronchoscopic Surgical Planning System</div>
+    <div class="splash-specs">
+      <div class="splash-spec"><div class="ss-label">Rendering</div><div class="ss-val">PBR</div></div>
+      <div class="splash-spec"><div class="ss-label">Segments</div><div class="ss-val">17</div></div>
+      <div class="splash-spec"><div class="ss-label">Interaction</div><div class="ss-val">VR+AI</div></div>
+      <div class="splash-spec"><div class="ss-label">Version</div><div class="ss-val">v20</div></div>
+    </div>
     <div class="sln"></div>
     <button id="sbtn"><span>INITIALISE SYSTEM</span></button>
-    <div class="snote">🤲 Grab lung to rotate · 👆 Point to navigate · IJKL deflect · [?] Keys</div>
+    <div class="snote">Grab lung to rotate · Point to navigate · IJKL deflect · ? for keys</div>
+    <div class="splash-foot" style="margin-top:28px;">Área Sanitaria de A Coruña y Cee</div>
   </div>
 </div>
 <div id="mode-sel" style="display:none"></div>
@@ -1023,9 +1216,9 @@ input[type=range]::-webkit-slider-thumb {
     </div>
 
     <div class="tabs">
-      <div class="tab" id="tab-ov" onclick="setView('overview')">🫁 EXTERNAL</div>
+      <div class="tab" id="tab-ov" onclick="setView('overview')"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" style="vertical-align:-2px;margin-right:4px"><path d="M10 2v5M10 7c-1-1-3-2-5-1.5C3 6 2 8 2 10c0 3 1 5 3 6 1 .5 2 .5 3 0l2-1M10 7c1-1 3-2 5-1.5C17 6 18 8 18 10c0 3-1 5-3 6-1 .5-2 .5-3 0l-2-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>EXTERNAL</div>
       <div class="tab on" id="tab-du" onclick="setView('dual')">⊞ DUAL</div>
-      <div class="tab" id="tab-br" onclick="setView('scope')">🔭 SCOPE</div>
+      <div class="tab" id="tab-br" onclick="setView('scope')"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" style="vertical-align:-2px;margin-right:4px"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.4"/><line x1="10" y1="1" x2="10" y2="4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="10" y1="16" x2="10" y2="19" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="1" y1="10" x2="4" y2="10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="16" y1="10" x2="19" y2="10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>SCOPE</div>
     </div>
 
     <div class="tb-stats">
@@ -1038,6 +1231,20 @@ input[type=range]::-webkit-slider-thumb {
       <div class="ts"><div class="tsl">Hands</div><div class="tsv" id="hn-v">0</div></div>
     </div>
 
+    <div class="vital-strip">
+      <div class="vital">
+        <canvas id="hb-wave-canvas" width="52" height="20"></canvas>
+        <div class="vital-label">Heartbeat</div>
+      </div>
+      <div class="vital">
+        <canvas id="br-wave-canvas" width="52" height="20"></canvas>
+        <div class="vital-label">Respiration</div>
+      </div>
+      <div class="vital">
+        <div class="vital-val res" id="resist-pulse">0%</div>
+        <div class="vital-label">Resistance</div>
+      </div>
+    </div>
     <div class="status-pill">
       <div class="sdot" id="sdot"></div>
       <span class="spillt" id="sdot-l">INIT</span>
@@ -1073,8 +1280,8 @@ input[type=range]::-webkit-slider-thumb {
       </svg>
 
       <!-- Surgical Planning Patient Loader Banner -->
-      <div id="patient-loader" onclick="showToast('DICOM pipeline coming soon · Using procedural model','info')">
-        <div class="pl-icon">📂</div>
+      <div id="patient-loader" onclick="triggerPatientLoad()">
+        <div class="pl-icon"><svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M2 6a2 2 0 012-2h3l2 2h7a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
         <div class="pl-text">
           <div class="pl-title">No patient DICOM loaded</div>
           <div class="pl-sub">Using procedural bronchial tree model</div>
@@ -1086,19 +1293,29 @@ input[type=range]::-webkit-slider-thumb {
     <div id="bro-view">
       <canvas id="c-bro"></canvas>
       <div id="bro-vig"></div>
+      <div id="path-glow"></div>
       <div id="bro-hud">
         <div class="bh" id="bh-tl">VIRTUAL BRONCHOSCOPE v19<br>Anatomical · Fisheye 120°</div>
         <div class="bh" id="bh-tr">DEPTH <span id="bh-dep">0</span>mm<br>t=<span id="bh-t">0.000</span></div>
         <div class="bh" id="bh-bl">MODE <span id="bh-mode">NAV</span><br>GEN <span id="bh-gen">0</span></div>
         <div class="bh" id="bh-br"><span id="bh-seg">TRACHEA</span><br>ACTIVE</div>
       </div>
-      <div id="xhair"><div class="xr xr1"></div><div class="xr xr2"></div></div>
+      <div id="xhair">
+        <div class="xr xr1"></div>
+        <div class="xr xr2"></div>
+        <div id="xhair-b"></div>
+        <div id="xhair-r"></div>
+        <div id="xhair-tl"></div>
+        <div id="xhair-tr"></div>
+        <div id="xhair-bl"></div>
+        <div id="xhair-br"></div>
+      </div>
       <div id="dbar"><div id="dfill"></div></div>
       <div id="scope-resistance-bar"><div id="scope-resistance-fill"></div></div>
       <div id="resistance-label">RESIST</div>
       <div id="aring"></div>
       <div id="hold-prog"><svg viewBox="0 0 64 64"><circle id="hold-arc" cx="32" cy="32" r="30"/></svg></div>
-      <div id="palert">⚠ PATHOLOGY</div>
+      <div id="palert"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M8 2L1 14h14L8 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><line x1="8" y1="7" x2="8" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r="0.6" fill="currentColor"/></svg>PATHOLOGY</div>
       <div id="bsel">
         <div class="bso lo" id="bsl-l">◀ LEFT</div>
         <div id="bsel-mid">TILT TO SELECT<br>HOLD 1s TO ENTER</div>
@@ -1156,7 +1373,7 @@ input[type=range]::-webkit-slider-thumb {
           <div class="fcg b" id="r-g">—</div>
         </div>
       </div>
-      <div class="gmap">👆 <span>Point</span> → Advance<br>✋ <span>Open</span> → Retract<br>🤲 <span>Grab(2 hands)</span> → Rotate/Zoom<br>✌ <span>Peace</span> → Rotate model<br>🤏 <span>Pinch+hold</span> → Clinical<br>👊 <span>Fist</span> → Reset</div>
+      <div class="gmap"><span>[ Point ]</span> Advance &nbsp;<span>[ Open ]</span> Retract<br><span>[ 2-Hands ]</span> Rotate/Zoom<br><span>[ Peace ]</span> Rotate model<br><span>[ Pinch ]</span> Clinical action &nbsp;<span>[ Fist ]</span> Reset</div>
     </div>
   </div>
 
@@ -1172,30 +1389,150 @@ input[type=range]::-webkit-slider-thumb {
         <span style="font-size:7px;color:var(--teal);font-family:var(--mono);" id="map-gen">Gen 0</span>
       </div>
       <canvas id="mapcan" width="200" height="110" style="margin:4px 14px 0;width:calc(100% - 28px);height:110px;display:block;border:1px solid rgba(14,207,176,.08);border-radius:3px;background:rgba(0,0,0,.4)"></canvas>
-      <div class="spos">📍 <span id="spos-l">TRACHEA</span></div>
+      <div class="spos"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M8 1C5.5 1 3.5 3 3.5 5.5 3.5 9 8 15 8 15s4.5-6 4.5-9.5C12.5 3 10.5 1 8 1z" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.5" r="1.5" stroke="currentColor" stroke-width="1.3"/></svg><span id="spos-l">TRACHEA</span></div>
       <div class="cmg">
-        <button class="cmb on"  id="cm-nav" onclick="setClinMode('nav')"><span class="ci">🔭</span><span class="cl">Navigate</span></button>
-        <button class="cmb"     id="cm-bio" onclick="setClinMode('biopsy')"><span class="ci">🔬</span><span class="cl">Biopsy</span></button>
-        <button class="cmb"     id="cm-mes" onclick="setClinMode('measure')"><span class="ci">📏</span><span class="cl">Measure</span></button>
-        <button class="cmb"     id="cm-ann" onclick="setClinMode('annotate')"><span class="ci">📍</span><span class="cl">Annotate</span></button>
+        <button class="cmb on" id="cm-nav" onclick="setClinMode('nav')">
+          <span class="ci"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="1" x2="8" y2="3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="8" y1="12.5" x2="8" y2="15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="1" y1="8" x2="3.5" y2="8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="12.5" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
+          <span class="cl">Navigate</span>
+        </button>
+        <button class="cmb" id="cm-bio" onclick="setClinMode('biopsy')">
+          <span class="ci"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="8" y1="2" x2="8" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="5.5" y1="4.5" x2="8" y2="2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="10.5" y1="4.5" x2="8" y2="2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/></svg></span>
+          <span class="cl">Biopsy</span>
+        </button>
+        <button class="cmb" id="cm-mes" onclick="setClinMode('measure')">
+          <span class="ci"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="2" y1="5.5" x2="2" y2="10.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="14" y1="5.5" x2="14" y2="10.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="6" y1="6.5" x2="6" y2="9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="10" y1="6.5" x2="10" y2="9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
+          <span class="cl">Measure</span>
+        </button>
+        <button class="cmb" id="cm-ann" onclick="setClinMode('annotate')">
+          <span class="ci"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2C5.8 2 4 3.8 4 6c0 3 4 8 4 8s4-5 4-8c0-2.2-1.8-4-4-4z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" stroke-width="1.2"/></svg></span>
+          <span class="cl">Annotate</span>
+        </button>
       </div>
       <div class="panel-hdr" style="border-top:1px solid var(--border);cursor:default">
         <span class="ph-t">Pathologies</span>
       </div>
-      <div class="pi-item" id="pi-tumor" style="cursor:pointer" onclick="jumpToPathology('tumor')">
-        <div class="pid" style="background:var(--red)"></div>Tumor LUL (polypoid)<span class="pdist" id="pd-tumor">—</span>
+      <div id="patho-list-dynamic">
+        <div class="pi-item" style="color:var(--text3);font-size:8px;padding:6px 0;">No patient loaded</div>
       </div>
-      <div class="pi-item" id="pi-sten" style="cursor:pointer" onclick="jumpToPathology('sten')">
-        <div class="pid" style="background:var(--amber)"></div>Stenosis RML (concentric)<span class="pdist" id="pd-sten">—</span>
+      <div id="server-loader">
+        <input type="text" id="sl-url" placeholder="http://localhost:8000" value="http://localhost:8000" style="width:100%"/>
+        <button class="sl-btn" id="sl-upload-btn" onclick="serverUploadDicom()">UPLOAD CT</button>
+        <button class="sl-btn" onclick="serverSynthetic()">SYN</button>
       </div>
-      <div class="pi-item" id="pi-mucus" style="cursor:pointer" onclick="jumpToPathology('mucus')">
-        <div class="pid" style="background:var(--purple)"></div>Mucus Plug LLL<span class="pdist" id="pd-mucus">—</span>
+      <div id="server-status"></div>
+      <div style="margin:2px 14px 4px;display:flex;gap:4px;">
+        <button class="vt-btn" onclick="takeScreenshot()" style="flex:none;padding:4px 10px;" title="Save PNG">&#x1F4F7; Screenshot</button>
+        <button class="vt-btn" onclick="toggleCenterline()" id="cl-btn" style="flex:none;padding:4px 10px;" title="Toggle centerline">Centerline</button>
+      </div>
+      <input type="file" id="sl-zip-picker" accept=".zip" style="display:none"/>
+      <div id="view-toggle">
+        <button class="vt-btn vt-on" id="vt-ref" onclick="setViewMode('reference')" title="Reference anatomy">REF</button>
+        <button class="vt-btn" id="vt-pat" onclick="setViewMode('patient')" title="Loaded patient">PATIENT</button>
+        <button class="vt-btn vt-empty" id="vt-empty" onclick="setViewMode('empty')" title="Empty canvas">EMPTY</button>
+      </div>
+      <div id="route-panel">
+        <div class="rt-hdr">Approach route</div>
+        <div id="route-steps"></div>
+      </div>
+      <div id="scope-sel">
+        <label>Scope</label>
+        <select id="scope-diam" onchange="updateScopeSize()">
+          <option value="2.8">Ultra-thin 2.8mm</option>
+          <option value="3.8" selected>Standard 3.8mm</option>
+          <option value="4.2">Standard 4.2mm</option>
+          <option value="6.0">Therapeutic 6.0mm</option>
+        </select>
+      </div>
+      <div id="lumen-hud">
+        <span>Lumen ⌀</span>
+        <span id="lumen-val">—</span>
+        <span id="lumen-status" style="color:var(--teal)"></span>
       </div>
       <div class="panel-hdr" style="border-top:1px solid var(--border);cursor:default">
         <span class="ph-t">Annotations (<span id="ann-count">0</span>)</span>
         <button onclick="exportSession()" style="font-size:7px;background:var(--teal-dim);border:1px solid rgba(14,207,176,.2);color:var(--teal);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:var(--head)">EXPORT</button>
+        <button onclick="exportPDF()" style="font-size:7px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);color:var(--amber);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:var(--head)">PDF</button>
       </div>
       <div id="ann-list"></div>
+    </div>
+  </div>
+
+  <!-- SURGICAL PLANNING PANEL -->
+  <div id="sp-panel">
+    <div class="panel-hdr" onclick="togglePanel('sp')">
+      <span class="ph-t" style="color:var(--amber)">Surgical Planning</span>
+      <span class="ph-arr open" id="sp-arr">▶</span>
+    </div>
+    <div id="sp-body">
+      <div class="sp-section">
+        <div class="sp-label">Target Lesions</div>
+        <div id="sp-targets">
+          <div class="sp-target active" id="spt-tumor" onclick="jumpToPathology('tumor')">
+            <div class="spt-dot" style="background:var(--red)"></div>
+            <div class="spt-info">
+              <div class="spt-name">Tumor LUL</div>
+              <div class="spt-sub">Polypoid · B1-3</div>
+            </div>
+            <div class="spt-dist" id="spt-d-tumor">—</div>
+          </div>
+          <div class="sp-target" id="spt-sten" onclick="jumpToPathology('sten')">
+            <div class="spt-dot" style="background:var(--amber)"></div>
+            <div class="spt-info">
+              <div class="spt-name">Stenosis RML</div>
+              <div class="spt-sub">Concentric · B4-5</div>
+            </div>
+            <div class="spt-dist" id="spt-d-sten">—</div>
+          </div>
+          <div class="sp-target" id="spt-mucus" onclick="jumpToPathology('mucus')">
+            <div class="spt-dot" style="background:var(--purple)"></div>
+            <div class="spt-info">
+              <div class="spt-name">Mucus Plug</div>
+              <div class="spt-sub">Viscous · LLL B10</div>
+            </div>
+            <div class="spt-dist" id="spt-d-mucus">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="sp-section">
+        <div class="sp-label">Approach Quality</div>
+        <div class="sp-path-row">
+          <span class="sp-path-label">Path score</span>
+          <span class="sp-path-val" id="sp-score">—</span>
+        </div>
+        <div class="sp-bar"><div class="sp-bar-fill" id="sp-score-bar" style="width:0%;background:var(--green)"></div></div>
+        <div class="sp-path-row">
+          <span class="sp-path-label">Deflection needed</span>
+          <span class="sp-path-val" id="sp-defl-need">—</span>
+        </div>
+        <div class="sp-path-row">
+          <span class="sp-path-label">Generation depth</span>
+          <span class="sp-path-val" id="sp-gen-depth">0</span>
+        </div>
+      </div>
+      <div class="sp-section">
+        <div class="sp-label">Risk Zones</div>
+        <div class="sp-risk">
+          <div class="sp-risk-dot" style="background:#e05555"></div>
+          <span class="sp-risk-name">Pulmonary artery</span>
+          <span class="sp-risk-prox safe" id="rz-artery">SAFE</span>
+        </div>
+        <div class="sp-risk">
+          <div class="sp-risk-dot" style="background:#5585e0"></div>
+          <span class="sp-risk-name">Pulmonary vein</span>
+          <span class="sp-risk-prox safe" id="rz-vein">SAFE</span>
+        </div>
+        <div class="sp-risk">
+          <div class="sp-risk-dot" style="background:#aaaaaa"></div>
+          <span class="sp-risk-name">Lymph nodes</span>
+          <span class="sp-risk-prox safe" id="rz-lymph">SAFE</span>
+        </div>
+      </div>
+      <div class="sp-section" style="border-bottom:none">
+        <div class="sp-label">Recommendation</div>
+        <div class="sp-recommend" id="sp-recommend">
+          Navigate to <strong>LUL B1-3</strong> via left main bronchus. Approach angle optimal from current position.
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1244,8 +1581,8 @@ input[type=range]::-webkit-slider-thumb {
     <div id="sc-name">Trachea</div>
     <div id="sc-latin">Trachea</div>
     <div id="sc-body">Main airway from larynx to carina.</div>
-    <div id="sc-pearl">💡 The carina marks the split.</div>
-    <div id="sc-dismiss" onclick="document.getElementById('seg-card').classList.remove('show')">dismiss ✕</div>
+    <div id="sc-pearl">◈ The carina marks the split.</div>
+    <div id="sc-dismiss" onclick="document.getElementById('seg-card').classList.remove('show')">dismiss ×</div>
   </div>
 
   <!-- INSTRUCTOR PANEL -->
@@ -1463,17 +1800,17 @@ const rBro=new THREE.WebGLRenderer({canvas:cBro,antialias:true,powerPreference:'
 rBro.outputEncoding=THREE.sRGBEncoding;rBro.toneMapping=THREE.ACESFilmicToneMapping;rBro.toneMappingExposure=2.2;
 
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x010406);
-scene.fog=new THREE.FogExp2(0x010406,0.042);
+scene.background=new THREE.Color(0x04080f);
+scene.fog=new THREE.FogExp2(0x04080f,0.028);
 
 const camExt=new THREE.PerspectiveCamera(40,1,0.05,80);
 camExt.position.set(0,0.3,7.2);camExt.lookAt(0,0,0);
 const camScope=new THREE.PerspectiveCamera(110,1,0.003,8);
 
 // ==================== LIGHTS ====================
-scene.add(new THREE.AmbientLight(0x08121e,2.0));
+const ambientLight=new THREE.AmbientLight(0x4a3028,1.0);scene.add(ambientLight);
 const kL=new THREE.DirectionalLight(0xe0eeff,4.8);
-kL.position.set(4,10,6);kL.castShadow=true;kL.shadow.mapSize.set(2048,2048);kL.shadow.radius=4;scene.add(kL);
+kL.position.set(3,8,5);kL.castShadow=false;kL.intensity=3.2;scene.add(kL);
 const fillL=new THREE.DirectionalLight(0x102214,0.9);fillL.position.set(-2,-4,2);scene.add(fillL);
 const rimL=new THREE.DirectionalLight(0x002244,1.3);rimL.position.set(-5,2,-5);scene.add(rimL);
 const sssL=new THREE.PointLight(0xff1500,6.5,11);sssL.position.set(0,-1.8,1.4);scene.add(sssL);
@@ -1708,15 +2045,59 @@ const mGrp=new THREE.Group();scene.add(mGrp);
 const pathCurves={};
 const mucoMats=[];
 const bronchMatsMap={};
+const proceduralMeshes=[];
+var patientData = {
+  gltf:     null,
+  meta:     null,
+  loaded:   false,
+  patientId: null,
+};
+
+let meshMode='reference';
+let mmPerUnit=100;  // default: procedural tree (2.4 units ≈ 240mm airway span)
+
+function setViewMode(mode){
+  meshMode=mode;
+
+  // Adjust ambient light intensity — scene default is tuned dark for procedural shaders.
+  // Boost it when showing patient mesh so the GLB is properly visible.
+  if(typeof ambientLight!=='undefined'){
+    ambientLight.intensity = (mode==='reference') ? 1.0 : (mode==='patient') ? 0.6 : 0.1;
+  }
+
+  // Toggle buttons
+  ['ref','pat','empty'].forEach(k=>{
+    const b=document.getElementById('vt-'+k);
+    if(b)b.classList.remove('vt-on');
+  });
+  const activeId={reference:'vt-ref',patient:'vt-pat',empty:'vt-empty'}[mode];
+  const ab=document.getElementById(activeId);if(ab)ab.classList.add('vt-on');
+
+  // Show/hide procedural geometry
+  const showProc=(mode==='reference');
+  proceduralMeshes.forEach(m=>m.visible=showProc);
+  referenceMeshes.forEach(m=>{if(m)m.visible=showProc;});
+
+  // Show/hide patient GLB
+  if(patientData&&patientData.gltf) patientData.gltf.visible=(mode==='patient');
+
+  // Pathology meshes follow patient mode
+  Object.values(pathoMeshes).forEach(p=>{if(p.mesh)p.mesh.visible=(mode==='patient');});
+
+  showToast({reference:'Reference anatomy',patient:'Patient mesh',empty:'Empty canvas'}[mode],'info');
+}
+window.setViewMode=setViewMode;
 
 SEGS.forEach(seg=>{
   const curve=new THREE.CatmullRomCurve3(seg.pts,false,'catmullrom',0.5);
   pathCurves[seg.id]=curve;
   const segs2=Math.max(10,seg.pts.length*8);
   const bm=mkBronchExtMat();bronchMatsMap[seg.id]=bm;
-  mGrp.add(new THREE.Mesh(buildTube(curve,segs2,seg.r0*.94,seg.r1*.94,12),bm));
+  const om=new THREE.Mesh(buildTube(curve,segs2,seg.r0*.94,seg.r1*.94,12),bm);
+  mGrp.add(om);proceduralMeshes.push(om);
   const mm=mkTrachMat();mucoMats.push(mm);
-  mGrp.add(new THREE.Mesh(buildTube(curve,segs2,seg.r0*1.05,seg.r1*1.05,14),mm));
+  const im=new THREE.Mesh(buildTube(curve,segs2,seg.r0*1.05,seg.r1*1.05,14),mm);
+  mGrp.add(im);proceduralMeshes.push(im);
 });
 
 // ==================== PATHOLOGY MESHES ====================
@@ -1765,10 +2146,13 @@ function mkLungMatInst(side){const m=mkLungMat(side);lungMats.push(m);return m;}
 const rUpperL=new THREE.Mesh(buildLobedLungGeo(1,'upper'),mkLungMatInst(1));
 const rMidL=new THREE.Mesh(buildLobedLungGeo(1,'middle'),mkLungMatInst(1));
 const rLowL=new THREE.Mesh(buildLobedLungGeo(1,'lower'),mkLungMatInst(1));
-[rUpperL,rMidL,rLowL].forEach(m=>{m.castShadow=m.receiveShadow=true;m.position.set(.96,-.05,0);mGrp.add(m);});
+[rUpperL,rMidL,rLowL].forEach(m=>{m.castShadow=false;m.receiveShadow=false;m.position.set(.96,-.05,0);mGrp.add(m);});
 const lUpperL=new THREE.Mesh(buildLobedLungGeo(-1,'upper'),mkLungMatInst(-1));
 const lLowL=new THREE.Mesh(buildLobedLungGeo(-1,'lower'),mkLungMatInst(-1));
-[lUpperL,lLowL].forEach(m=>{m.castShadow=m.receiveShadow=true;m.position.set(-.96,-.05,0);mGrp.add(m);});
+[lUpperL,lLowL].forEach(m=>{m.castShadow=false;m.receiveShadow=false;m.position.set(-.96,-.05,0);mGrp.add(m);});
+
+// Track ALL reference-anatomy objects so setViewMode can hide them cleanly
+const referenceMeshes=[rUpperL,rMidL,rLowL,lUpperL,lLowL];
 
 function buildFissurePlane(side,type){
   const geo=new THREE.PlaneGeometry(.9,.7,20,20);const posArr=geo.attributes.position;
@@ -1780,9 +2164,9 @@ function buildFissurePlane(side,type){
   geo.computeVertexNormals();
   return new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x331208,roughness:.8,metalness:0,transparent:true,opacity:.22,side:THREE.DoubleSide}));
 }
-const rOblFiss=buildFissurePlane(1,'oblique');rOblFiss.position.set(.96,-.05+.14*.97,-.14*.46);mGrp.add(rOblFiss);
-const rHorFiss=buildFissurePlane(1,'horizontal');rHorFiss.position.set(.96,-.05+.22*.97,-.22*.46*.28);mGrp.add(rHorFiss);
-const lOblFiss=buildFissurePlane(-1,'oblique');lOblFiss.position.set(-.96,-.05+.14*.97,-.14*.46);mGrp.add(lOblFiss);
+const rOblFiss=buildFissurePlane(1,'oblique');rOblFiss.position.set(.96,-.05+.14*.97,-.14*.46);mGrp.add(rOblFiss);referenceMeshes.push(rOblFiss);
+const rHorFiss=buildFissurePlane(1,'horizontal');rHorFiss.position.set(.96,-.05+.22*.97,-.22*.46*.28);mGrp.add(rHorFiss);referenceMeshes.push(rHorFiss);
+const lOblFiss=buildFissurePlane(-1,'oblique');lOblFiss.position.set(-.96,-.05+.14*.97,-.14*.46);mGrp.add(lOblFiss);referenceMeshes.push(lOblFiss);
 
 function buildHilarTissue(side){
   const group=new THREE.Group(),mat=new THREE.MeshStandardMaterial({color:0x2a0808,roughness:.85,transparent:true,opacity:.65});
@@ -1790,13 +2174,15 @@ function buildHilarTissue(side){
   for(let i=0;i<4;i++){const node=new THREE.Mesh(new THREE.SphereGeometry(.04+Math.random()*.03,7,6),mat);node.position.set(side*(Math.random()*.08),(Math.random()-.5)*.22,(Math.random()-.5)*.06);group.add(node);}
   group.position.set(side*.30,.05,.08);return group;
 }
-mGrp.add(buildHilarTissue(-1));mGrp.add(buildHilarTissue(1));
+const hilarL=buildHilarTissue(-1);const hilarR=buildHilarTissue(1);
+mGrp.add(hilarL);mGrp.add(hilarR);referenceMeshes.push(hilarL,hilarR);
 
 function buildPulmonaryLig(side){
   const m=new THREE.Mesh(new THREE.PlaneGeometry(.18,.55,4,12),new THREE.MeshStandardMaterial({color:0x200808,transparent:true,opacity:.35,side:THREE.DoubleSide,roughness:.9}));
   m.position.set(side*.20,-.62,.04);m.rotation.y=Math.PI*.5-side*.2;return m;
 }
-mGrp.add(buildPulmonaryLig(-1));mGrp.add(buildPulmonaryLig(1));
+const ligL=buildPulmonaryLig(-1);const ligR=buildPulmonaryLig(1);
+mGrp.add(ligL);mGrp.add(ligR);referenceMeshes.push(ligL,ligR);
 
 // ==================== SCOPE PROBE ====================
 const probeGrp=new THREE.Group();
@@ -1808,21 +2194,38 @@ glowM.position.y=.085;
 probeGrp.add(shaftM,tipM,glowM);probeGrp.visible=false;mGrp.add(probeGrp);
 
 // ==================== PARTICLES ====================
-const PN=280;const pGeo=new THREE.BufferGeometry();
-const pP=new Float32Array(PN*3),pV=new Float32Array(PN*3),pC=new Float32Array(PN*3);
+// Ambient micro-particles — subtle, cool-blue, clinical feel
+const PN=120;const pGeo=new THREE.BufferGeometry();
+const pP=new Float32Array(PN*3),pC=new Float32Array(PN*3);
 for(let i=0;i<PN;i++){
-  const s=Math.random()<.5?-1:1;
-  pP[i*3]=s*(.32+Math.random()*.72);pP[i*3+1]=-.92+Math.random()*1.84;pP[i*3+2]=-.2+Math.random()*.52;
-  pV[i*3]=(Math.random()-.5)*.001;pV[i*3+1]=.0022+Math.random()*.0048;pV[i*3+2]=(Math.random()-.5)*.0008;
-  const ox=Math.random();pC[i*3]=.74+ox*.26;pC[i*3+1]=ox*.07;pC[i*3+2]=ox*.03;
+  pP[i*3  ]=(Math.random()-.5)*2.8;
+  pP[i*3+1]=(Math.random()-.5)*2.4;
+  pP[i*3+2]=(Math.random()-.5)*1.2;
+  // Cool blue-white tones instead of reddish
+  const t=Math.random();
+  pC[i*3  ]=0.5+t*0.3;pC[i*3+1]=0.7+t*0.2;pC[i*3+2]=0.9+t*0.1;
 }
 pGeo.setAttribute('position',new THREE.BufferAttribute(pP,3));
 pGeo.setAttribute('color',new THREE.BufferAttribute(pC,3));
-mGrp.add(new THREE.Points(pGeo,new THREE.PointsMaterial({size:.017,transparent:true,opacity:.42,sizeAttenuation:true,blending:THREE.AdditiveBlending,depthWrite:false,vertexColors:true})));
+mGrp.add(new THREE.Points(pGeo,new THREE.PointsMaterial({size:.008,transparent:true,opacity:.18,sizeAttenuation:true,blending:THREE.AdditiveBlending,depthWrite:false,vertexColors:true})));
 
-const gnd=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0x040c10,roughness:.96,metalness:.02}));
-gnd.rotation.x=-Math.PI/2;gnd.position.y=-2.2;gnd.receiveShadow=true;scene.add(gnd);
-scene.add(new THREE.GridHelper(18,24,0x050f14,0x050f14));
+// Clean floor — very dark, barely visible, just enough for depth perception
+const gnd=new THREE.Mesh(
+  new THREE.PlaneGeometry(28,28,1,1),
+  new THREE.MeshStandardMaterial({color:0x060c14,roughness:1.0,metalness:0,transparent:true,opacity:0.55})
+);
+gnd.rotation.x=-Math.PI/2;gnd.position.y=-2.2;scene.add(gnd);
+// Subtle radial vignette plane — darkens toward edges for depth
+const vignGeo=new THREE.PlaneGeometry(28,28,1,1);
+const vignMat=new THREE.ShaderMaterial({
+  transparent:true,depthWrite:false,
+  uniforms:{},
+  vertexShader:`varying vec2 vUV;void main(){vUV=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader:`varying vec2 vUV;void main(){vec2 c=vUV*2.-1.;float d=dot(c,c);float v=smoothstep(0.3,1.2,d)*0.7;gl_FragColor=vec4(0.,0.,0.,v);}`
+});
+const vignPlane=new THREE.Mesh(vignGeo,vignMat);
+vignPlane.rotation.x=-Math.PI/2;vignPlane.position.y=-2.19;scene.add(vignPlane);
+// grid removed — replaced with subtle floor plane below
 
 // ==================== SCOPE STATE ====================
 const scope={segId:0,t:0.01,depth:0,roll:0,deflH:0,deflV:0,velocity:0,velocityDecay:0.96,
@@ -1860,7 +2263,7 @@ function updateResistanceHUD(res){
   const tt=document.getElementById('tension-text');
   if(to){to.style.opacity=(res*0.72).toFixed(2);}
   if(tt){
-    if(res>0.65){tt.textContent=res>0.88?'⚠ HIGH RESISTANCE — RISK OF TRAUMA':'INCREASED RESISTANCE';tt.style.opacity='1';}
+    if(res>0.65){tt.textContent=res>0.88?'HIGH RESISTANCE — RISK OF TRAUMA':'INCREASED RESISTANCE';tt.style.opacity='1';}
     else{tt.style.opacity='0';}
   }
 }
@@ -1892,7 +2295,7 @@ function triggerMucosalBleed(segId){
       },32);
     }
   });
-  showToast('⚠ MUCOSAL BLEED — wall trauma in '+SEG_MAP[segId]?.name,'error');
+  showToast('MUCOSAL BLEED — wall trauma in '+SEG_MAP[segId]?.name,'error');
 }
 
 let _biopsyBleedTimer=null;
@@ -1975,7 +2378,7 @@ window.setClinMode=setClinMode;
 
 function g(id,fn){const el=document.getElementById(id);if(el)fn(el);}
 let tTmr;
-const toastTypes={info:{bg:'rgba(0,8,6,.97)',border:'var(--teal2)',icon:'ℹ️'},success:{bg:'rgba(0,20,6,.97)',border:'var(--green)',icon:'✓'},warn:{bg:'rgba(20,8,0,.97)',border:'var(--amber)',icon:'⚠'},error:{bg:'rgba(20,0,0,.97)',border:'var(--red)',icon:'✗'}};
+const toastTypes={info:{bg:'rgba(0,8,6,.97)',border:'var(--teal2)',icon:'·'},success:{bg:'rgba(0,20,6,.97)',border:'var(--green)',icon:'✓'},warn:{bg:'rgba(20,8,0,.97)',border:'var(--amber)',icon:'!'},error:{bg:'rgba(20,0,0,.97)',border:'var(--red)',icon:'×'}};
 function showToast(msg,type='info'){
   const t=document.getElementById('toast');if(!t)return;
   const c=toastTypes[type];t.innerHTML=`${c.icon} ${msg}`;t.style.backgroundColor=c.bg;t.style.borderColor=c.border;
@@ -2022,7 +2425,7 @@ function updateScope(){
   const q=new THREE.Quaternion();q.setFromUnitVectors(new THREE.Vector3(0,1,0),tang);probeGrp.quaternion.copy(q);
   const pulse=Math.sin(Date.now()*.0038)*.5+.5;
   tipM.material.emissiveIntensity=.8+pulse*.7;glowM.material.opacity=.07+pulse*.10;
-  const tLen=curve.getLength()||1;scope.depth=t*tLen*120;
+  const tLen=curve.getLength()||1;scope.depth=t*tLen*mmPerUnit;
   const deg=Math.round(Math.sqrt(scope.deflH*scope.deflH+scope.deflV*scope.deflV)*CFG.deflMax);
   g('dep-v',el=>el.textContent=Math.round(scope.depth)+'mm');
   g('bh-dep',el=>el.textContent=Math.round(scope.depth));
@@ -2036,7 +2439,7 @@ function updateScope(){
   const res=getScopeResistance();
   updateResistanceHUD(res);
   checkProx(pos);drawMap();drawDeflIndicator();drawCTOverlay(pos,tang);
-  updateScopeIndicator();showSegCard(scope.segId);updateScoring();updateDocStatus();
+  updateScopeIndicator();showSegCard(scope.segId);updateDocStatus();
 }
 
 function checkProx(pos){
@@ -2049,7 +2452,7 @@ function checkProx(pos){
   });
   const al=document.getElementById('palert');
   if(nearest&&minD<.4){
-    if(al){al.textContent='⚠ '+nearest.label.split('\n')[0];al.classList.add('show');}
+    if(al){al.textContent=nearest.label.split('\n')[0];al.classList.add('show');}
     g('bi-v',el=>{el.textContent=nearest.label.split('\n')[0];el.className='w';});
     markPathologyFound(nearest.id);
   }else{
@@ -2178,24 +2581,24 @@ function showSegCard(segId){
   if(segId===_lastCardSeg)return;_lastCardSeg=segId;
   // Full 23-entry card library (v17)
   const info={
-    0:{name:'Trachea',latin:'Trachea',body:'Main airway 10–12cm. 16–20 C-shaped cartilage rings open posteriorly at trachealis muscle. Diameter ~18mm adult.',pearl:'💡 Posterior membranous trachealis strip is the key orientation landmark. Look for it to know which way is posterior.'},
-    1:{name:'L Main Bronchus',latin:'Bronchus principalis sinister',body:'4–5cm long, more horizontal than right (45–55° from trachea). Passes under aortic arch and left pulmonary artery.',pearl:'💡 More horizontal angle = higher risk of secretion pooling. Left is longer and narrower than right.'},
-    4:{name:'R Main Bronchus',latin:'Bronchus principalis dexter',body:'2–3cm, more vertical (~25° from trachea). Near-straight continuation. Higher foreign body aspiration risk.',pearl:'💡 Shortest and most vertical main bronchus = aspirated objects go here first. Check RLL early.'},
-    2:{name:'LUL – B1-3',latin:'Bronchus lobaris superior sinister',body:'Left upper lobe. Apicoposterior (B1+2) and anterior (B3) segments. Tumor present in this case: polypoid mass with contact bleeding.',pearl:'💡 Irregular friable mucosa + abnormal vessels = biopsy here. Apply biopsy mode and pinch+hold.'},
-    3:{name:'LLL – B9-10',latin:'Bronchus lobaris inferior sinister',body:'Left lower lobe basal segments. Mucus plug present. Gravitational drainage zone in supine position.',pearl:'💡 Yellowish/purple globular material = mucus plug. Do NOT biopsy — suction or BAL appropriate.'},
-    5:{name:'RUL – B1-3',latin:'Bronchus lobaris superior dexter',body:'Right upper lobe. Arises at, or just below, carina level. Trifurcation common (B1, B2, B3).',pearl:'💡 First bronchus after right main — check for stenosis at origin. Short take-off from main bronchus.'},
-    6:{name:'RML – B4-5',latin:'Bronchus lobaris medius',body:'Right middle lobe. Susceptible to middle lobe syndrome (compression by lymph nodes). Stenosis present: concentric pale rings.',pearl:'💡 Concentric pale ring narrowing = fibrotic/extrinsic stenosis. Measure lumen diameter here.'},
-    7:{name:'RLL – B9-10',latin:'Bronchus lobaris inferior dexter',body:'Right lower lobe basal segments. Large catchment zone. Common site for aspiration pneumonia and secretion retention.',pearl:'💡 Check for retained secretions and mucus in B9/B10. Easiest lower lobe segment to reach.'},
-    20:{name:'LUL B1-2',latin:'Segmentum apicoposterius',body:'Apicoposterior segment of LUL. Occupies the apex and posterior surface of left upper lobe. Often site of TB reactivation.',pearl:'💡 Apical segment — scope tip often needs full upward deflection. Check for post-TB scarring.'},
-    21:{name:'LUL B3',latin:'Segmentum anterius sinistrum',body:'Anterior segment of LUL. Faces the anterior chest wall. Part of the lingula complex on the left.',pearl:'💡 Paired with lingula (B4-5) — assess both for symmetrical involvement in pneumonias.'},
-    22:{name:'LLL B9',latin:'Segmentum laterale basale',body:'Lateral basal segment of left lower lobe. Lateral thoracic wall drainage. May be hard to reach with standard deflection.',pearl:'💡 Lateral approach — try clockwise roll of scope before advancing into lateral basal.'},
-    23:{name:'LLL B10',latin:'Segmentum posterius basale sinistrum',body:'Posterior basal segment of LUL. Mucus plug case located here. Gravity-dependent in supine patients.',pearl:'💡 Most dependent segment in supine position — secretions and aspirated material pool here first.'},
-    24:{name:'RUL B1-2',latin:'Segmentum apicoposterius dextrum',body:'Apical and posterior segments of RUL. Due to short RUL take-off, these are technically challenging to enter.',pearl:'💡 Short RUL ostium makes deep entry difficult — assess ostium patency from RMB before entering.'},
-    25:{name:'RUL B3',latin:'Segmentum anterius dextrum',body:'Anterior segment of RUL. Faces anterior chest wall. Common site of consolidation visible on CT.',pearl:'💡 Cross-reference CT position with scope depth. Note any mucosal erythema suggesting consolidation.'},
-    26:{name:'RML B4',latin:'Segmentum laterale medii',body:'Lateral segment of right middle lobe. Anterior orientation. Site of middle lobe syndrome when lymph nodes compress nearby.',pearl:'💡 Middle lobe syndrome: extrinsic compression often from subcarinal lymph nodes — look for external narrowing.'},
-    27:{name:'RML B5',latin:'Segmentum mediale medii',body:'Medial segment of RML. Faces mediastinum. Frequently involved in right heart border pneumonia.',pearl:'💡 Mediastinal surface — evaluate for pericardial involvement in central tumors extending to this area.'},
-    28:{name:'RLL B9',latin:'Segmentum laterale basale dextrum',body:'Lateral basal segment of RLL. Similar to contralateral B9. Important in chronic aspiration assessment.',pearl:'💡 Chronic aspiration commonly affects dependent RLL segments — look for erythema and granulation.'},
-    29:{name:'RLL B10',latin:'Segmentum posterius basale dextrum',body:'Posterior basal segment of RLL. Most dependent right-side segment. Most common site of right-sided aspiration pneumonia.',pearl:'💡 Most gravity-dependent right segment. Standard first check in aspiration workup — sample BAL here.'},
+    0:{name:'Trachea',latin:'Trachea',body:'Main airway 10–12cm. 16–20 C-shaped cartilage rings open posteriorly at trachealis muscle. Diameter ~18mm adult.',pearl:'◈ Posterior membranous trachealis strip is the key orientation landmark. Look for it to know which way is posterior.'},
+    1:{name:'L Main Bronchus',latin:'Bronchus principalis sinister',body:'4–5cm long, more horizontal than right (45–55° from trachea). Passes under aortic arch and left pulmonary artery.',pearl:'◈ More horizontal angle = higher risk of secretion pooling. Left is longer and narrower than right.'},
+    4:{name:'R Main Bronchus',latin:'Bronchus principalis dexter',body:'2–3cm, more vertical (~25° from trachea). Near-straight continuation. Higher foreign body aspiration risk.',pearl:'◈ Shortest and most vertical main bronchus = aspirated objects go here first. Check RLL early.'},
+    2:{name:'LUL – B1-3',latin:'Bronchus lobaris superior sinister',body:'Left upper lobe. Apicoposterior (B1+2) and anterior (B3) segments. Tumor present in this case: polypoid mass with contact bleeding.',pearl:'◈ Irregular friable mucosa + abnormal vessels = biopsy here. Apply biopsy mode and pinch+hold.'},
+    3:{name:'LLL – B9-10',latin:'Bronchus lobaris inferior sinister',body:'Left lower lobe basal segments. Mucus plug present. Gravitational drainage zone in supine position.',pearl:'◈ Yellowish/purple globular material = mucus plug. Do NOT biopsy — suction or BAL appropriate.'},
+    5:{name:'RUL – B1-3',latin:'Bronchus lobaris superior dexter',body:'Right upper lobe. Arises at, or just below, carina level. Trifurcation common (B1, B2, B3).',pearl:'◈ First bronchus after right main — check for stenosis at origin. Short take-off from main bronchus.'},
+    6:{name:'RML – B4-5',latin:'Bronchus lobaris medius',body:'Right middle lobe. Susceptible to middle lobe syndrome (compression by lymph nodes). Stenosis present: concentric pale rings.',pearl:'◈ Concentric pale ring narrowing = fibrotic/extrinsic stenosis. Measure lumen diameter here.'},
+    7:{name:'RLL – B9-10',latin:'Bronchus lobaris inferior dexter',body:'Right lower lobe basal segments. Large catchment zone. Common site for aspiration pneumonia and secretion retention.',pearl:'◈ Check for retained secretions and mucus in B9/B10. Easiest lower lobe segment to reach.'},
+    20:{name:'LUL B1-2',latin:'Segmentum apicoposterius',body:'Apicoposterior segment of LUL. Occupies the apex and posterior surface of left upper lobe. Often site of TB reactivation.',pearl:'◈ Apical segment — scope tip often needs full upward deflection. Check for post-TB scarring.'},
+    21:{name:'LUL B3',latin:'Segmentum anterius sinistrum',body:'Anterior segment of LUL. Faces the anterior chest wall. Part of the lingula complex on the left.',pearl:'◈ Paired with lingula (B4-5) — assess both for symmetrical involvement in pneumonias.'},
+    22:{name:'LLL B9',latin:'Segmentum laterale basale',body:'Lateral basal segment of left lower lobe. Lateral thoracic wall drainage. May be hard to reach with standard deflection.',pearl:'◈ Lateral approach — try clockwise roll of scope before advancing into lateral basal.'},
+    23:{name:'LLL B10',latin:'Segmentum posterius basale sinistrum',body:'Posterior basal segment of LUL. Mucus plug case located here. Gravity-dependent in supine patients.',pearl:'◈ Most dependent segment in supine position — secretions and aspirated material pool here first.'},
+    24:{name:'RUL B1-2',latin:'Segmentum apicoposterius dextrum',body:'Apical and posterior segments of RUL. Due to short RUL take-off, these are technically challenging to enter.',pearl:'◈ Short RUL ostium makes deep entry difficult — assess ostium patency from RMB before entering.'},
+    25:{name:'RUL B3',latin:'Segmentum anterius dextrum',body:'Anterior segment of RUL. Faces anterior chest wall. Common site of consolidation visible on CT.',pearl:'◈ Cross-reference CT position with scope depth. Note any mucosal erythema suggesting consolidation.'},
+    26:{name:'RML B4',latin:'Segmentum laterale medii',body:'Lateral segment of right middle lobe. Anterior orientation. Site of middle lobe syndrome when lymph nodes compress nearby.',pearl:'◈ Middle lobe syndrome: extrinsic compression often from subcarinal lymph nodes — look for external narrowing.'},
+    27:{name:'RML B5',latin:'Segmentum mediale medii',body:'Medial segment of RML. Faces mediastinum. Frequently involved in right heart border pneumonia.',pearl:'◈ Mediastinal surface — evaluate for pericardial involvement in central tumors extending to this area.'},
+    28:{name:'RLL B9',latin:'Segmentum laterale basale dextrum',body:'Lateral basal segment of RLL. Similar to contralateral B9. Important in chronic aspiration assessment.',pearl:'◈ Chronic aspiration commonly affects dependent RLL segments — look for erythema and granulation.'},
+    29:{name:'RLL B10',latin:'Segmentum posterius basale dextrum',body:'Posterior basal segment of RLL. Most dependent right-side segment. Most common site of right-sided aspiration pneumonia.',pearl:'◈ Most gravity-dependent right segment. Standard first check in aspiration workup — sample BAL here.'},
   };
   const data=info[segId];if(!data)return;
   const seg=SEG_MAP[segId];
@@ -2210,14 +2613,9 @@ function showSegCard(segId){
 }
 
 function triggerWallContact(){
-  if(!PNEUMO.features.wallCollision)return;
-  PNEUMO.session.wallContacts++;PNEUMO.session.score=Math.max(0,PNEUMO.session.score-2);
-  // Per-segment tracking (v17)
   const sid=scope.segId;
   wallContactsBySegment[sid]=(wallContactsBySegment[sid]||0)+1;
-  // Screen shake (v17)
   triggerScreenShake();
-  // Wall flash
   const wf=document.getElementById('wall-flash');
   if(wf){wf.style.opacity='1';setTimeout(()=>wf.style.opacity='0',220);}
   // Mucosal bleed on threshold (v17)
@@ -2318,7 +2716,7 @@ function fireAction(){
     updateAnnUI();showToast('BIOPSY · '+seg?.name+' · '+Math.round(scope.depth)+'mm','success');
   }else if(clinMode==='measure'){
     if(!scope.measuring){scope.measurePt1=scope.pos.clone();scope.measuring=true;showToast('PT 1 MARKED — advance and pinch again');}
-    else{const d=scope.measurePt1.distanceTo(scope.pos)*100;
+    else{const d=scope.measurePt1.distanceTo(scope.pos)*mmPerUnit;
       scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([scope.measurePt1,scope.pos.clone()]),new THREE.LineBasicMaterial({color:0xff9900})));
       scope.measuring=false;clinAnn.push({type:'MEASURE',dist:d.toFixed(1)+'mm',seg:seg?.name,time:new Date().toISOString()});
       updateAnnUI();showToast('DISTANCE: '+d.toFixed(1)+'mm');}
@@ -2333,7 +2731,7 @@ function fireAction(){
 function updateAnnUI(){
   g('ann-count',el=>el.textContent=clinAnn.length);
   const list=document.getElementById('ann-list');if(!list)return;
-  list.innerHTML=clinAnn.slice(-6).reverse().map(a=>a.type==='BIOPSY'?`<div class="ai">🔬 <span>${a.seg}</span> ${a.depth}mm</div>`:a.type==='MEASURE'?`<div class="ai">📏 <span>${a.dist}</span></div>`:`<div class="ai">📍 <span>N${a.n}</span> ${a.seg}</div>`).join('');
+  list.innerHTML=clinAnn.slice(-6).reverse().map(a=>a.type==='BIOPSY'?`<div class="ai"><svg width='10' height='10' viewBox='0 0 16 16' fill='none' style='vertical-align:-1px;margin-right:3px'><line x1='8' y1='2' x2='8' y2='10' stroke='#0ecfb0' stroke-width='1.3' stroke-linecap='round'/><line x1='5.5' y1='4.5' x2='8' y2='2' stroke='#0ecfb0' stroke-width='1.3' stroke-linecap='round'/><line x1='10.5' y1='4.5' x2='8' y2='2' stroke='#0ecfb0' stroke-width='1.3' stroke-linecap='round'/><circle cx='8' cy='12' r='2' stroke='#0ecfb0' stroke-width='1.3'/></svg><span>${a.seg}</span> ${a.depth}mm</div>`:a.type==='MEASURE'?`<div class="ai"><svg width='10' height='10' viewBox='0 0 16 16' fill='none' style='vertical-align:-1px;margin-right:3px'><line x1='2' y1='8' x2='14' y2='8' stroke='#f5a623' stroke-width='1.3' stroke-linecap='round'/><line x1='2' y1='5.5' x2='2' y2='10.5' stroke='#f5a623' stroke-width='1.3' stroke-linecap='round'/><line x1='14' y1='5.5' x2='14' y2='10.5' stroke='#f5a623' stroke-width='1.3' stroke-linecap='round'/></svg><span>${a.dist}</span></div>`:`<div class="ai"><svg width='10' height='10' viewBox='0 0 16 16' fill='none' style='vertical-align:-1px;margin-right:3px'><path d='M8 1C5.5 1 3.5 3 3.5 5.5 3.5 9 8 15 8 15s4.5-6 4.5-9.5C12.5 3 10.5 1 8 1z' stroke='#8b5cf6' stroke-width='1.3'/><circle cx='8' cy='5.5' r='1.5' stroke='#8b5cf6' stroke-width='1.3'/></svg><span>N${a.n}</span> ${a.seg}</div>`).join('');
 }
 function exportSession(){
   const data={version:'PNEUMO-VR-v18',date:new Date().toISOString(),annotations:clinAnn};
@@ -2342,12 +2740,373 @@ function exportSession(){
 window.exportSession=exportSession;
 
 function jumpToPathology(id){
-  const p=pathoMeshes[id];if(!p)return;
+  // Works for both procedural (seg.pathology.id) and loaded patient (pathoMeshes key)
+  const p=pathoMeshes[id];
+  if(p){jumpToPathoById(id);return;}
   const seg=SEGS.find(s=>s.pathology?.id===id);if(!seg)return;
-  scope.segId=seg.id;scope.t=seg.pathology.t-.05;scope.history=[{segId:seg.id,t:scope.t}];
-  hideBranchSel();updateScope();showToast('JUMP → '+p.label.split('\n')[0],'info');
+  scope.segId=seg.id;scope.t=Math.max(0.01,(seg.pathology.t||0.5)-0.05);
+  scope.history=[{segId:seg.id,t:scope.t}];
+  hideBranchSel();updateScope();showToast('JUMP → '+(seg.pathology.label||id),'info');
 }
 window.jumpToPathology=jumpToPathology;
+
+// ==================== CAMERA AUTO-FOCUS ====================
+function _focusCameraOnGLB(gltfScene){
+  // Compute bounding box in world space
+  const box = new THREE.Box3().setFromObject(gltfScene);
+  if(box.isEmpty()) return;
+
+  const center = new THREE.Vector3();
+  const size   = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(size);
+
+  // mGrp is controlled by ext — don't move it, move camera instead.
+  // Reset ext to neutral so the group sits at origin.
+  ext.idle = false;
+  ext.mx   = 0;
+  ext.my   = 0;
+  ext.rx   = -10;
+  ext.ry   = 0;
+  ext.sc   = 1;
+  applyExt();
+
+  // Now the group is at origin. Fit camera distance to bounding box.
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fovRad = THREE.MathUtils.degToRad(camExt.fov);
+  const dist   = (maxDim / 2) / Math.tan(fovRad / 2) * 1.8;
+
+  // Center mesh vertically in view — offset camera Y by mesh center Y
+  camExt.position.set(center.x, center.y + maxDim * 0.15, center.z + dist);
+  camExt.lookAt(center.x, center.y, center.z);
+  camExt.updateProjectionMatrix();
+}
+// ==================== END CAMERA AUTO-FOCUS ====================
+
+// ==================== SCOPE SIZE + LUMEN READOUT ====================
+let scopeDiamMm = 3.8;
+function updateScopeSize(){
+  const sel = document.getElementById('scope-diam');
+  scopeDiamMm = parseFloat(sel?.value || 3.8);
+  // Recolour route steps if route is open
+  const panel = document.getElementById('route-panel');
+  if(panel?.classList.contains('show')) {
+    const lastId = Object.keys(pathoMeshes).find(k=>pathoMeshes[k]);
+    if(lastId) planApproachRoute(lastId);
+  }
+  showToast('Scope: '+scopeDiamMm+'mm — route updated','info');
+}
+window.updateScopeSize = updateScopeSize;
+
+function updateLumenHud(){
+  const seg = SEG_MAP[scope.segId]; if(!seg) return;
+  const r = (seg.r1||seg.r0||0.05);
+  const diamMm = (r * mmPerUnit * 2);
+  const fits = scopeDiamMm <= diamMm;
+  const lv = document.getElementById('lumen-val');
+  const ls = document.getElementById('lumen-status');
+  if(lv) lv.textContent = diamMm.toFixed(1)+'mm';
+  if(ls){
+    ls.textContent = fits ? '✓ fits' : '✗ too narrow';
+    ls.style.color = fits ? 'var(--teal)' : 'var(--red)';
+  }
+}
+// Hook into updateScope
+const _origUpdateScope = typeof updateScope !== 'undefined' ? updateScope : null;
+// We'll patch via the render loop instead — safe approach
+// ==================== END SCOPE SIZE ====================
+
+// ==================== SCREENSHOT ====================
+function takeScreenshot(){
+  // Render one frame then grab both canvases
+  try {
+    rExt.render(scene, camExt);
+    const pid = patientData?.patientId || 'pneumovr';
+    const ts  = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const canvas = document.getElementById('c-ext');
+    if(!canvas){ showToast('Canvas not found','error'); return; }
+    canvas.toBlob(blob=>{
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${pid}_${ts}.png`;
+      a.click();
+      showToast('Screenshot saved · '+a.download,'success');
+    }, 'image/png');
+  } catch(e) {
+    showToast('Screenshot error: '+e.message,'error');
+  }
+}
+window.takeScreenshot = takeScreenshot;
+// ==================== END SCREENSHOT ====================
+
+// ==================== CENTERLINE OVERLAY ====================
+let centerlineVisible = false;
+const centerlineLines = [];
+
+function toggleCenterline(){
+  centerlineVisible = !centerlineVisible;
+  const btn = document.getElementById('cl-btn');
+
+  if(centerlineVisible){
+    // Build line segments from SEGS pts
+    if(centerlineLines.length === 0){
+      const mat = new THREE.LineBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.7,depthTest:false});
+      SEGS.forEach(seg=>{
+        if(!seg.pts||seg.pts.length<2) return;
+        const pts = seg.pts.map(p=>p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0],p[1],p[2]));
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const line = new THREE.Line(geo,mat);
+        mGrp.add(line);
+        centerlineLines.push(line);
+      });
+    }
+    centerlineLines.forEach(l=>l.visible=true);
+    if(btn){ btn.classList.add('vt-on'); }
+    showToast('Centerline ON','info');
+  } else {
+    centerlineLines.forEach(l=>l.visible=false);
+    if(btn){ btn.classList.remove('vt-on'); }
+    showToast('Centerline OFF','info');
+  }
+}
+window.toggleCenterline = toggleCenterline;
+// ==================== END CENTERLINE OVERLAY ====================
+
+// ==================== DICOM METADATA PANEL ====================
+function _updateDicomMetaPanel(meta){
+  // Inject a metadata row into the surgical planning panel
+  const recEl = document.getElementById('sp-recommend');
+  if(!recEl) return;
+  const p  = meta.patient || {};
+  const tr = meta.transform || {};
+  const pid   = p.patient_id   || '—';
+  const name  = p.patient_name || '—';
+  const date  = p.study_date   || '—';
+  const mod   = p.modality     || '—';
+  const slices= p.n_slices     || '—';
+  const spacing = p.spacing_mm ? p.spacing_mm.map(v=>v.toFixed(2)).join(' × ')+' mm' : '—';
+  const span  = tr.target_span || '—';
+  const synth = tr.is_synthetic ? ' · SYNTHETIC' : '';
+
+  recEl.innerHTML = `
+    <div style="font-size:9px;font-family:var(--mono);line-height:2;color:var(--text2)">
+      <div style="color:var(--teal);font-weight:600;margin-bottom:4px">${pid}${synth}</div>
+      <div><span style="color:var(--text3)">Name&nbsp;&nbsp;&nbsp;</span>${name}</div>
+      <div><span style="color:var(--text3)">Date&nbsp;&nbsp;&nbsp;</span>${date}</div>
+      <div><span style="color:var(--text3)">Modality</span> ${mod}</div>
+      <div><span style="color:var(--text3)">Slices&nbsp;&nbsp;</span>${slices}</div>
+      <div><span style="color:var(--text3)">Spacing&nbsp;</span>${spacing}</div>
+      <div><span style="color:var(--text3)">Scale&nbsp;&nbsp;&nbsp;</span>${mmPerUnit.toFixed(1)} mm/unit</div>
+    </div>`;
+}
+// ==================== END DICOM METADATA ====================
+
+// ==================== PDF REPORT ====================
+function exportPDF(){
+  const pid   = patientData?.meta?.patient?.patient_id || 'Unknown';
+  const date  = patientData?.meta?.patient?.study_date || '—';
+  const nSegs = patientData?.meta?.segments?.length || 0;
+  const paths = patientData?.meta?.pathologies || [];
+  const anns  = typeof clinAnn !== 'undefined' ? clinAnn : [];
+  const ts    = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+  const pathRows = paths.map(p=>`
+    <tr>
+      <td>${p.label||p.type}</td>
+      <td>${p.type}</td>
+      <td>${p.severity!=null?Math.round(p.severity*100)+'%':'—'}</td>
+      <td>${p.subtype||'—'}</td>
+    </tr>`).join('');
+
+  const annRows = anns.map(a=>`
+    <tr>
+      <td>${a.type}</td>
+      <td>${a.seg||'—'}</td>
+      <td>${a.depth!=null?a.depth+'mm':a.dist||'—'}</td>
+      <td>${a.time?a.time.slice(0,19).replace('T',' '):'—'}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>PNEUMO·VR Pre-Procedure Report — ${pid}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:30px 40px;max-width:700px}
+  h1{font-size:18px;margin-bottom:2px;color:#0a0a0a}
+  .sub{color:#555;font-size:10px;margin-bottom:20px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#333;border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:24px}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th{background:#f0f0f0;text-align:left;padding:5px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+  td{padding:5px 8px;border-bottom:1px solid #eee;vertical-align:top}
+  .meta-row{display:flex;gap:40px;margin-top:8px}
+  .meta-item{font-size:10px}
+  .meta-item .lbl{color:#777;display:block}
+  .meta-item .val{font-weight:bold;font-size:12px}
+  .footer{margin-top:40px;font-size:9px;color:#aaa;border-top:1px solid #eee;padding-top:8px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:bold}
+  .badge.pol{background:#ffe0e3;color:#a00}
+  .badge.ste{background:#fff3e0;color:#a60}
+  .badge.muc{background:#f0e6ff;color:#60a}
+</style></head><body>
+<h1>PNEUMO·VR Pre-Procedure Planning Report</h1>
+<div class="sub">Generated ${ts} · neumAC R&I · Área Sanitaria de A Coruña y Cee</div>
+
+<h2>Patient</h2>
+<div class="meta-row">
+  <div class="meta-item"><span class="lbl">Patient ID</span><span class="val">${pid}</span></div>
+  <div class="meta-item"><span class="lbl">Study Date</span><span class="val">${date}</span></div>
+  <div class="meta-item"><span class="lbl">Segments mapped</span><span class="val">${nSegs}</span></div>
+  <div class="meta-item"><span class="lbl">Scale</span><span class="val">${mmPerUnit.toFixed(1)} mm/unit</span></div>
+</div>
+
+<h2>Detected Pathologies (${paths.length})</h2>
+<table>
+  <tr><th>Label</th><th>Type</th><th>Severity</th><th>Subtype</th></tr>
+  ${pathRows||'<tr><td colspan="4">None detected</td></tr>'}
+</table>
+
+<h2>Scope Selection</h2>
+<table>
+  <tr><th>Parameter</th><th>Value</th></tr>
+  <tr><td>Planned scope diameter</td><td>${scopeDiamMm}mm</td></tr>
+  <tr><td>Scale calibration</td><td>${mmPerUnit.toFixed(1)} mm/unit</td></tr>
+</table>
+
+<h2>Annotations & Measurements</h2>
+<table>
+  <tr><th>Type</th><th>Segment</th><th>Value</th><th>Time</th></tr>
+  ${annRows||'<tr><td colspan="4">No annotations recorded</td></tr>'}
+</table>
+
+<div class="footer">
+  PNEUMO·VR v20 Surgical Planning Edition · pipeline.py v1.1 · Report auto-generated<br>
+  This report is for planning purposes only and does not constitute a clinical diagnosis.
+</div>
+</body></html>`;
+
+  const blob = new Blob([html],{type:'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `PNEUMOVR_${pid}_${Date.now()}.html`;
+  a.click();
+  showToast('PDF report exported · open in browser and print to PDF','success');
+}
+window.exportPDF = exportPDF;
+// ==================== END PDF REPORT ====================
+
+// ==================== DYNAMIC PATHOLOGY LIST ====================
+const PATHO_COLORS={polypoid:'var(--red)',stenosis:'var(--amber)',mucus_plug:'var(--purple)',extrinsic_compression:'var(--amber)',blood_clot:'#cc3300'};
+function _rebuildPathoList(pathologies){
+  const el=document.getElementById('patho-list-dynamic');
+  if(!el)return;
+  if(!pathologies.length){
+    el.innerHTML='<div class="pi-item" style="color:var(--text3);font-size:8px;padding:6px 0;">No pathologies detected</div>';
+    return;
+  }
+  el.innerHTML=pathologies.map(p=>{
+    const col=PATHO_COLORS[p.type]||'var(--text2)';
+    const sev=p.severity!=null?Math.round(p.severity*100)+'%':'';
+    const sub=p.subtype?` · ${p.subtype}`:'';
+    return `<div class="pi-item" style="cursor:pointer" onclick="jumpToPathoById('${p.id}')">
+      <div class="pid" style="background:${col}"></div>
+      <span style="flex:1;font-size:9px">${p.label||p.type}</span>
+      <span class="pdist" style="color:${col}">${sev}</span>
+    </div>`;
+  }).join('');
+  // Also rebuild sp-panel targets
+  const sp=document.getElementById('sp-targets');
+  if(sp){
+    sp.innerHTML=pathologies.map((p,i)=>{
+      const col=PATHO_COLORS[p.type]||'var(--teal)';
+      const sev=p.severity!=null?Math.round(p.severity*100)+'%':'—';
+      const typeMap={'polypoid':'tumor','stenosis':'sten','mucus_plug':'mucus'};
+      const meshId=typeMap[p.type]||p.id;
+      return `<div class="sp-target${i===0?' active':''}" data-patho-id="${meshId}" onclick="jumpToPathoById('${p.id}')">
+        <div class="spt-dot" style="background:${col}"></div>
+        <div class="spt-info">
+          <div class="spt-name">${p.label||p.id}</div>
+          <div class="spt-detail">Severity ${sev}${p.blob_hu_mean!=null?' · HU '+Math.round(p.blob_hu_mean):''}</div>
+        </div>
+        <div class="spt-dist" style="font-size:9px;color:var(--teal)">—</div>
+        <button class="spt-btn" onclick="event.stopPropagation();planApproachRoute('${p.id}')">ROUTE</button>
+      </div>`;
+    }).join('');
+  }
+}
+
+function jumpToPathoById(id){
+  const p=pathoMeshes[id];
+  if(!p){showToast('Pathology not in scene','warn');return;}
+  scope.segId=p.segId;scope.t=Math.max(0.01,p.t-0.06);
+  scope.history=[{segId:p.segId,t:scope.t}];
+  hideBranchSel();updateScope();
+  showToast('JUMP → '+p.label,'info');
+}
+window.jumpToPathoById=jumpToPathoById;
+
+// ==================== APPROACH ROUTE PLANNER ====================
+function planApproachRoute(pathoId){
+  const p=pathoMeshes[pathoId];
+  if(!p){showToast('No pathology to plan route to','warn');return;}
+
+  const targetSegId=p.segId;
+  // BFS from root (seg 0) to target
+  const path=_bfsPath(0,targetSegId);
+  if(!path){showToast('Route not found','warn');return;}
+
+  const panel=document.getElementById('route-panel');
+  const steps=document.getElementById('route-steps');
+  if(!panel||!steps)return;
+
+  const SCOPE_MIN_R=0.005; // ~5mm lumen radius in Three.js units — scope won't pass below this
+
+  steps.innerHTML=path.map((segId,i)=>{
+    const seg=SEG_MAP[segId];if(!seg)return '';
+    const r=seg.r1||seg.r0||0.05;
+    const rMm=Math.round(r*mmPerUnit*2); // diameter in mm
+    const isTgt=segId===targetSegId;
+    const isTight=r<SCOPE_MIN_R*1.5;
+    const col=isTgt?'#ff2244':isTight?'#f5a623':'#0ecfb0';
+    const warn=isTight?'⚠':'';
+    const arrow=i>0?'└─ ':'';
+    return `<div class="rt-seg">
+      <div class="rt-dot" style="background:${col}"></div>
+      <span class="rt-name">${arrow}${seg.name}</span>
+      <span class="rt-r">ø${rMm}mm</span>
+      ${warn?`<span class="rt-warn">${warn}</span>`:''}
+    </div>`;
+  }).join('');
+
+  // Highlight tight segments
+  const tight=path.filter(id=>{const s=SEG_MAP[id];return s&&(s.r1||s.r0||0.05)<SCOPE_MIN_R*1.5;});
+  const note=tight.length?`<div style="font-size:8px;color:var(--amber);margin-top:4px">⚠ ${tight.length} narrow segment${tight.length>1?'s':''} en route — verify scope diameter</div>`:'';
+  steps.insertAdjacentHTML('beforeend',note);
+
+  panel.classList.add('show');
+  showToast('Route: '+path.length+' segments','info');
+
+  // Jump scope to start of route
+  scope.segId=0;scope.t=0.01;scope.history=[{segId:0,t:0.01}];
+  hideBranchSel();updateScope();
+}
+window.planApproachRoute=planApproachRoute;
+
+function _bfsPath(startId,targetId){
+  if(startId===targetId)return[startId];
+  const visited=new Set([startId]);
+  const queue=[[startId,[startId]]];
+  while(queue.length){
+    const[cur,path]=queue.shift();
+    const seg=SEG_MAP[cur];if(!seg)continue;
+    for(const cid of(seg.children||[])){
+      if(visited.has(cid))continue;
+      visited.add(cid);
+      const newPath=[...path,cid];
+      if(cid===targetId)return newPath;
+      queue.push([cid,newPath]);
+    }
+  }
+  return null;
+}
 
 // ==================== EXTERNAL MODEL CONTROLS ====================
 const ext={mx:0,my:0,rx:0,ry:0,sc:1,rot:{on:false,hx:0,hy:0},buf:{rx:[],ry:[]},idle:true,idleA:0,_zd:null,_zs:1};
@@ -2461,7 +3220,7 @@ function updateUI(){
   g('hb-pi',el=>{const v=Math.min(100,((cnt['PINCH']||0)/2)*100);el.style.width=v+'%';el.classList.toggle('low',v<50&&v>0);});
   const conf=Math.max(HYST.conf.r,HYST.conf.l);
   g('gr-fg',el=>el.style.strokeDashoffset=120*(1-conf));g('gr-v',el=>el.textContent=Math.round(conf*100)+'%');
-  const subs={PINCH:'🤏 Clinical action',PEACE:'↻ Rotating',FIST:'↺ Reset',OPEN:'← Retracting',POINT:'→ Advancing',NONE:'—','—':'Show your hand'};
+  const subs={PINCH:'[ Clinical ]',PEACE:'↻ Rotating',FIST:'↺ Reset',OPEN:'← Retracting',POINT:'→ Advancing',NONE:'—','—':'Show your hand'};
   g('gsub',el=>el.textContent=subs[main]||main);
   const r=Math.round(HYST.conf.r*100),l=Math.round(HYST.conf.l*100);
   g('rp-v',el=>el.textContent=r+'%');g('lp-v',el=>el.textContent=l+'%');
@@ -2476,6 +3235,164 @@ function updateUI(){
   g('gdbg',el=>el.textContent=`R:${HYST.raw.r}→${HYST.active.r} tilt:${HYST.tilt.r.toFixed(2)}`);
 }
 
+// ================================================================
+// VITAL SIGNS WAVEFORMS + SURGICAL PLANNING LIVE UPDATES
+// ================================================================
+
+// ── Heartbeat waveform ─────────────────────────────────────────
+const _hbCanvas = document.getElementById('hb-wave-canvas');
+const _hbCtx = _hbCanvas ? _hbCanvas.getContext('2d') : null;
+const _hbBuf = new Float32Array(52).fill(0);
+
+function _drawWave(ctx, buf, color, w, h) {
+  if (!ctx) return;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < buf.length; i++) {
+    const x = i;
+    const y = h/2 - buf[i] * (h/2 - 2);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// ── Respiration waveform ───────────────────────────────────────
+const _brCanvas = document.getElementById('br-wave-canvas');
+const _brCtx = _brCanvas ? _brCanvas.getContext('2d') : null;
+const _brBuf = new Float32Array(52).fill(0);
+
+// ── Update vitals each animation frame ─────────────────────────
+let _vitalT = 0;
+function updateVitals(time) {
+  _vitalT = time;
+  // Heartbeat — sharp QRS complex at ~72bpm
+  const hbPhase = (time * 1.2) % 1;
+  let hbVal = 0;
+  if (hbPhase < 0.05)       hbVal = hbPhase / 0.05;
+  else if (hbPhase < 0.08)  hbVal = 1 - (hbPhase - 0.05) / 0.03 * 1.8;
+  else if (hbPhase < 0.12)  hbVal = -0.8 + (hbPhase - 0.08) / 0.04 * 1.4;
+  else if (hbPhase < 0.18)  hbVal = 0.6 - (hbPhase - 0.12) / 0.06 * 0.6;
+  hbVal += Math.sin(time * 24) * 0.02; // subtle noise
+  _hbBuf.copyWithin(0, 1);
+  _hbBuf[51] = hbVal;
+  _drawWave(_hbCtx, _hbBuf, '#ff4466', 52, 20);
+
+  // Respiration — slow sine ~14 breaths/min
+  const brVal = Math.sin(time * 0.233 * Math.PI * 2) * 0.8;
+  _brBuf.copyWithin(0, 1);
+  _brBuf[51] = brVal;
+  _drawWave(_brCtx, _brBuf, '#44bbff', 52, 20);
+
+  // Resistance readout
+  const rp = document.getElementById('resist-pulse');
+  if (rp) {
+    const res = typeof getScopeResistance === 'function' ? getScopeResistance() : 0;
+    rp.textContent = Math.round(res * 100) + '%';
+    rp.style.color = res > 0.7 ? 'var(--red)' : res > 0.4 ? 'var(--amber)' : 'var(--green)';
+  }
+}
+
+// ── Surgical planning panel live updates ───────────────────────
+function updateSurgicalPanel() {
+  // ── Dynamic: iterate ALL loaded pathoMeshes, not hardcoded IDs ──
+  let closest = null, closestDist = Infinity, closestLabel = '';
+  const seen = new Set();
+
+  Object.entries(pathoMeshes).forEach(([id, p]) => {
+    if (!p || !p.pos || seen.has(p.label)) return;
+    seen.add(p.label);
+    const distUnits = scope.pos.distanceTo(p.pos);
+    const distMm = distUnits * mmPerUnit;
+    if (distMm < closestDist) {
+      closestDist = distMm; closest = id; closestLabel = p.label || id;
+    }
+    // Update distance on sp-target rows (matched by data-patho-id attribute)
+    const row = document.querySelector(`[data-patho-id="${id}"]`);
+    if (row) {
+      const distEl = row.querySelector('.spt-dist');
+      if (distEl) {
+        distEl.textContent = distMm < 9999 ? Math.round(distMm)+'mm' : '—';
+        distEl.style.color = distMm < 30 ? 'var(--red)' : distMm < 80 ? 'var(--amber)' : 'var(--teal)';
+      }
+      row.classList.toggle('active', distMm === closestDist);
+    }
+  });
+
+  // Path score — based on resistance + generation depth
+  const seg = SEG_MAP[scope.segId];
+  const gen = seg?.gen ?? 0;
+  const res = typeof getScopeResistance === 'function' ? getScopeResistance() : 0;
+  const score = Math.max(0, Math.min(100, Math.round(100 - res * 50 - gen * 8)));
+  const scoreEl = document.getElementById('sp-score');
+  const scoreBar = document.getElementById('sp-score-bar');
+  if (scoreEl) {
+    scoreEl.textContent = score + '%';
+    scoreEl.className = 'sp-path-val' + (score > 70 ? '' : score > 40 ? ' warn' : ' alert');
+  }
+  if (scoreBar) {
+    scoreBar.style.width = score + '%';
+    scoreBar.style.background = score > 70 ? 'var(--green)' : score > 40 ? 'var(--amber)' : 'var(--red)';
+  }
+
+  // Deflection needed
+  const deflEl = document.getElementById('sp-defl-need');
+  const deflMag = Math.round(Math.sqrt(scope.deflH*scope.deflH+scope.deflV*scope.deflV)*100);
+  if (deflEl) {
+    deflEl.textContent = deflMag + '%';
+    deflEl.className = 'sp-path-val' + (deflMag < 30 ? '' : deflMag < 60 ? ' warn' : ' alert');
+  }
+
+  // Generation depth
+  const genEl = document.getElementById('sp-gen-depth');
+  if (genEl) genEl.textContent = gen;
+
+  // Risk zones — simple proximity model
+  const risks = [
+    {id:'rz-artery', threshold:[25,60]},
+    {id:'rz-vein',   threshold:[35,70]},
+    {id:'rz-lymph',  threshold:[45,90]},
+  ];
+  risks.forEach(({id, threshold:[warn,safe]}) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const d = closestDist;
+    if (d < warn) { el.textContent='DANGER'; el.className='sp-risk-prox danger'; }
+    else if (d < safe) { el.textContent='CAUTION'; el.className='sp-risk-prox caution'; }
+    else { el.textContent='SAFE'; el.className='sp-risk-prox safe'; }
+  });
+
+  // Recommendation text — uses dynamic closestLabel
+  const recEl = document.getElementById('sp-recommend');
+  if (recEl && seg && !patientData.meta) {
+    // No patient loaded yet — show DICOM meta panel (already populated)
+  } else if (recEl && seg) {
+    const segName = seg.name || 'target';
+    const side = segName.startsWith('L') ? 'left' : 'right';
+    const targetShort = closestLabel.split('·')[0].trim() || 'target';
+    if (closestDist < 25) {
+      recEl.innerHTML = `<strong>TARGET REACHED</strong> — ${targetShort}. Proceed with biopsy or annotation.`;
+    } else if (closest) {
+      recEl.innerHTML = `Navigate via <strong>${side} main bronchus</strong> toward <strong>${targetShort}</strong>. ${gen >= 2 ? 'Tip deflection required.' : 'Straight approach viable.'}`;
+    }
+  }
+
+  // Pathology proximity glow on bro-view
+  const glow = document.getElementById('path-glow');
+  if (glow) {
+    if (closestDist < 25)      glow.className = 'found';
+    else if (closestDist < 60) glow.className = 'near';
+    else                       glow.className = '';
+  }
+}
+
+console.log('PNEUMO·VR — Vitals + Surgical Planning panel live');
+// ================================================================
+// END VITALS + SURGICAL PLANNING UPDATES
+// ================================================================
+
+
 // ==================== RENDER LOOP ====================
 let time=0,frames=0,lastFpsT=performance.now();
 
@@ -2488,6 +3405,7 @@ function animate(){
   // Update shaders
   lungMats.forEach(m=>{m.uniforms.uT.value=time;m.uniforms.uBreath.value=time;});
   mucoMats.forEach(m=>{m.uniforms.uT.value=time;m.uniforms.uBreath.value=time;});
+  if(patientData&&patientData._mat&&patientData._mat.uniforms) patientData._mat.uniforms.uT.value=time;
   Object.values(bronchMatsMap).forEach(m=>m.uniforms.uT.value=time);
 
   // Breathing scale
@@ -2510,7 +3428,7 @@ function animate(){
   Object.values(pathoMeshes).forEach(({mesh})=>{mesh.traverse(c=>{if(c.material?.emissiveIntensity!==undefined)c.material.emissiveIntensity=.48+Math.sin(time*3.6)*.32;});});
 
   // Patient triggers
-  updatePatientTriggers(time);
+  // updatePatientTriggers removed — planning tool, no disease simulation
 
   // Velocity with resistance modulation (v17)
   if(Math.abs(scope.velocity)>.0001){
@@ -2520,17 +3438,15 @@ function animate(){
 
   mGrp.updateMatrixWorld(true);
 
-  // Particles
-  for(let i=0;i<PN;i++){
-    let y=pGeo.attributes.position.getY(i)+pV[i*3+1];if(y>1.1)y=-.95;
-    pGeo.attributes.position.setY(i,y);
-    pGeo.attributes.position.setX(i,pGeo.attributes.position.getX(i)+pV[i*3]);
-    pGeo.attributes.position.setZ(i,pGeo.attributes.position.getZ(i)+pV[i*3+2]);
-  }
-  pGeo.attributes.position.needsUpdate=true;
+  // Particles are static — no velocity update needed
 
   // Idle auto-rotation (v16)
   if(ext.idle){ext.idleA+=.16;ext.ry=ext.idleA;ext.my=Math.sin(time*.34)*.05;applyExt();}
+  updateLumenHud();
+
+  // Vital signs waveforms
+  updateVitals(time);
+  updateSurgicalPanel();
 
   updateScope();
 
@@ -2597,7 +3513,7 @@ document.getElementById('sbtn')?.addEventListener('click',async()=>{
     hands.setOptions({maxNumHands:2,modelComplexity:0,minDetectionConfidence:.55,minTrackingConfidence:.50});
     hands.onResults(onHandResults);
     const cam=new Camera(vid,{onFrame:async()=>{await hands.send({image:vid});},width:640,height:480});
-    cam.start().then(()=>{if(dot)dot.className='sdot on';if(lbl)lbl.textContent='ACTIVE';showToast('READY — 👆 Point · 🤲 Grab · ✌ Peace=rotate · [?] Keys','info');});
+    cam.start().then(()=>{if(dot)dot.className='sdot on';if(lbl)lbl.textContent='ACTIVE';showToast('GESTURE READY — Point · Open · Peace · Pinch · Fist · [?] Keys','info');});
   }catch(err){
     console.error(err);if(dot)dot.className='sdot r';if(lbl)lbl.textContent='NO CAM';
     showToast('No camera · ↑↓ navigate · IJKL deflect · click=teleport','warn');
@@ -2953,6 +3869,471 @@ rBro.xr.addEventListener('sessionend', () => {
 console.log('PNEUMO·VR Phase 2 — WebXR controllers loaded');
 // ================================================================
 // END PHASE 2
+// ================================================================
+
+
+
+// ================================================================
+// PHASE 3 — PATIENT MESH LOADER
+// Loads GLTF + JSON sidecar from pipeline.py or synthetic.py
+// Replaces procedural bronchial tree with patient-specific mesh
+// Falls back to procedural tree if no files loaded
+// ================================================================
+
+// State — null means procedural fallback is active
+
+
+// ── Single picker — select GLTF + JSON together ──────────────────
+// Browser blocks programmatic .click() on a second picker, so we use
+// one <input multiple> and sort files by extension client-side.
+function triggerPatientLoad() {
+  const picker = document.getElementById('patient-picker');
+  picker.onchange = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    // Sort: find GLTF and JSON regardless of selection order
+    const gltfFile = files.find(f => /[.](gltf|glb)$/i.test(f.name));
+    const jsonFile = files.find(f => /[.]json$/i.test(f.name));
+
+    if (!gltfFile) { showToast('No GLTF file selected', 'warn'); return; }
+    if (!jsonFile) { showToast('No JSON file selected · select both files together', 'warn'); return; }
+
+    showToast('Loading patient data...', 'info');
+
+    // Read both files in parallel
+    const readGLTF = new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload  = ev => res(ev.target.result);
+      r.onerror = rej;
+      r.readAsArrayBuffer(gltfFile);
+    });
+    const readJSON = new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload  = ev => res(ev.target.result);
+      r.onerror = rej;
+      r.readAsText(jsonFile);
+    });
+
+    Promise.all([readGLTF, readJSON]).then(([gltfBuf, jsonText]) => {
+      // Parse JSON first (fast) so it's ready when GLTF finishes
+      let meta;
+      try { meta = JSON.parse(jsonText); }
+      catch(err) { showToast('JSON parse error · ' + err.message, 'error'); return; }
+
+      // Load GLTF then apply meta
+      _loadGLTFFromArrayBuffer(gltfBuf, gltfFile.name, () => {
+        _applyPatientMeta(meta);
+      });
+    }).catch(err => {
+      showToast('File read error · ' + err.message, 'error');
+    });
+
+    picker.value = ''; // reset for re-selection
+  };
+  picker.click();
+}
+window.triggerPatientLoad = triggerPatientLoad;
+
+// ── Load GLTF from ArrayBuffer ────────────────────────────────────
+function _loadGLTFFromArrayBuffer(buffer, filename, onDone) {
+  const loader = new THREE.GLTFLoader();
+  loader.parse(buffer, '', (gltf) => {
+
+    // Hide all reference anatomy — keep in memory for REF toggle
+    proceduralMeshes.forEach(m=>m.visible=false);
+    referenceMeshes.forEach(m=>{if(m)m.visible=false;});
+
+    // Remove previous patient GLB if reloading
+    if (patientData.gltf) {
+      mGrp.remove(patientData.gltf);
+    }
+
+    // Patient GLB — anatomical bronchial tissue shader
+    // Target: warm salmon-pink tissue, visible cartilage rings, wet sheen, SSS
+    const PATIENT_V=`
+      varying vec3 vWP;varying vec3 vN;varying vec2 vUV;
+      void main(){
+        vN=normalize(mat3(modelMatrix)*normal);
+        vUV=uv;vWP=(modelMatrix*vec4(position,1.)).xyz;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);
+      }`;
+    const PATIENT_F=`
+      precision highp float;
+      varying vec3 vWP;varying vec3 vN;varying vec2 vUV;
+      uniform float uT;
+      float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5);}
+      float n2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+        return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}
+      float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<3;i++){v+=a*n2(p);p*=2.1;a*=.52;}return v;}
+      void main(){
+        vec3 N=normalize(vN);
+        vec3 viewDir=normalize(cameraPosition-vWP);
+        float u=vUV.x,v=vUV.y;
+
+        // ── Tissue base: warm salmon-pink, light variation ──
+        float noiseVal=fbm(vec2(u*4.,v*6.));
+        vec3 tissueLight=vec3(.92,.62,.50);  // highlight — light salmon
+        vec3 tissueDark =vec3(.82,.46,.36);  // shadow — warm rose
+        vec3 base=mix(tissueDark,tissueLight,noiseVal);
+
+        // ── Cartilage rings — C-shaped bands every ~14 uv units ──
+        float ring=fract(v*14.);
+        float inRing=smoothstep(.08,.14,ring)*smoothstep(.45,.38,ring);
+        // Posterior gap (trachealis membrane) — no cartilage at u≈0.5
+        float posterior=1.-smoothstep(.35,.5,abs(fract(u+.5)-.5)*2.);
+        float cartilage=inRing*(1.-posterior*.9);
+        vec3 cartCol=vec3(.80,.72,.58);  // pale yellowish cartilage
+        base=mix(base,cartCol,cartilage*.65);
+
+        // ── Vasculature — subtle arterial/venous threads ──
+        float art=smoothstep(.08,.0,abs(sin(v*22.+fbm(vec2(u*4.,v*2.))*2.5)));
+        float ven=smoothstep(.10,.0,abs(sin(v*17.+(u+.2)*3.+fbm(vec2(u*3.,v*3.))*2.)));
+        float pulse=sin(uT*2.6)*.5+.5;
+        base=mix(base,vec3(.82,.12,.08),art*.35*(1.+pulse*.2));
+        base=mix(base,vec3(.30,.08,.28),ven*.28);
+
+        // ── Multi-light diffuse — high ambient floor so nothing goes black ──
+        vec3 key =normalize(vec3( 2., 5., 4.));
+        vec3 fill=normalize(vec3(-3.,-1., 2.));
+        vec3 rim =normalize(vec3(-1., 2.,-4.));
+        vec3 back=normalize(vec3( 0.,-1.,-1.));
+        float diff= max(dot(N,key), 0.)*.65
+                  + max(dot(N,fill),0.)*.20
+                  + max(dot(N,rim), 0.)*.15
+                  + max(dot(N,back),0.)*.10
+                  + .48;  // strong ambient floor — no face goes black
+
+        // ── Wet specular ──
+        vec3 H=normalize(key+viewDir);
+        float spec=pow(max(dot(N,H),0.),60.)*.6;
+        float cartSpec=pow(max(dot(N,H),0.),120.)*cartilage*.5;
+
+        // ── Subsurface scatter — backlit warmth through thin tissue ──
+        float sss=pow(max(dot(viewDir,-N),0.),2.)*.28;
+
+        vec3 col=base*diff;
+        col+=vec3(.98,.96,.94)*(spec+cartSpec);
+        col+=vec3(.92,.30,.14)*sss;
+        col+=base*.18;  // emissive floor — always readable in dark scene
+
+        gl_FragColor=vec4(clamp(col,0.,1.),1.);
+      }`;
+    const patientMat = new THREE.ShaderMaterial({
+      uniforms:{ uT:{value:0} },
+      vertexShader: PATIENT_V,
+      fragmentShader: PATIENT_F,
+      side: THREE.DoubleSide,
+    });
+    // Animate the shader uniform in the render loop
+    patientData._mat = patientMat;
+    gltf.scene.traverse(child => {
+      if (child.isMesh) {
+        // Ensure smooth normals — compute if not in GLB
+        if (!child.geometry.attributes.normal) {
+          child.geometry.computeVertexNormals();
+        }
+        child.geometry.normalizeNormals();
+        child.material = patientMat;
+        child.castShadow = false;
+        child.receiveShadow = false;
+      }
+    });
+
+    mGrp.add(gltf.scene);
+    patientData.gltf = gltf.scene;
+    patientData.loaded = true;
+    patientData.patientId = filename.replace(/[.][^.]+$/, '');
+
+    // Auto-focus external camera onto loaded mesh
+    _focusCameraOnGLB(gltf.scene);
+    // Boost scene lighting for patient mesh visibility
+    kL.intensity = 5.5;
+    fillL.intensity = 2.2;
+
+    // Update the loader banner
+    _updateLoaderBanner(true);
+    showToast('Mesh loaded · ' + filename, 'success');
+
+    if (onDone) onDone();
+  }, (err) => {
+    showToast('GLTF load error · ' + err.message, 'error');
+  });
+}
+
+// ── Apply JSON sidecar — rebuild segment graph ────────────────────
+function _applyPatientMeta(meta) {
+  if (!meta.segments || !meta.version) {
+    showToast('Invalid meta JSON · missing segments', 'error');
+    return;
+  }
+
+  patientData.meta = meta;
+
+  // ── Rebuild SEGS from meta ──────────────────────────────────────
+  // Clear existing procedural curves and meshes from mGrp
+  // (keep the GLTF mesh — just rebuild navigation graph)
+  Object.keys(pathCurves).forEach(k => delete pathCurves[k]);
+  Object.keys(SEG_MAP).forEach(k => delete SEG_MAP[k]);
+  SEGS.length = 0;
+
+  meta.segments.forEach(s => {
+    // Convert pts array to THREE.Vector3
+    const pts3 = s.pts.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    const seg = {
+      id:       s.id,
+      name:     s.name,
+      gen:      s.gen,
+      pts:      pts3,
+      r0:       s.r0,
+      r1:       s.r1,
+      children: s.children,
+      parent:   s.parent ?? -1,
+    };
+    SEGS.push(seg);
+    SEG_MAP[s.id] = seg;
+
+    // Rebuild CatmullRom curve for scope navigation
+    if (pts3.length >= 2) {
+      pathCurves[s.id] = new THREE.CatmullRomCurve3(pts3, false, 'catmullrom', 0.5);
+    }
+  });
+
+  // ── Rebuild pathology meshes from meta ─────────────────────────
+  // Remove old pathology meshes
+  Object.values(pathoMeshes).forEach(p => { if(p.mesh) mGrp.remove(p.mesh); });
+  Object.keys(pathoMeshes).forEach(k => delete pathoMeshes[k]);
+
+  if (meta.pathologies) {
+    meta.pathologies.forEach(p => {
+      const seg = SEG_MAP[p.seg_id];
+      if (!seg || !pathCurves[seg.id]) return;
+
+      // Map pipeline pathology type → existing createPathologyMesh IDs
+      const typeMap = {
+        'polypoid':   'tumor',
+        'stenosis':   'sten',
+        'mucus_plug': 'mucus',
+      };
+      const meshId = typeMap[p.type] || p.id;
+
+      // Reuse existing pathology builder with mapped ID
+      const fakeSeg = { ...seg, pathology: { id: meshId, t: p.t, label: p.label, col: parseInt((p.col||'#888888').replace('#',''), 16), type: p.type } };
+      const mesh = createPathologyMesh(fakeSeg, fakeSeg.pathology);
+      if (mesh) {
+        mGrp.add(mesh);
+        // Register by BOTH meshId (legacy) and p.id (new) so all lookup paths work
+        const entry = { mesh, label: p.label||p.type, segId: seg.id, t: p.t, pos: mesh.position.clone(), severity: p.severity };
+        pathoMeshes[meshId] = entry;
+        if(p.id && p.id !== meshId) pathoMeshes[p.id] = entry;
+      }
+    });
+  }
+
+  // Reset scope to start of new tree
+  scope.segId = 0;
+  scope.t = 0.01;
+  scope.history = [{ segId: 0, t: 0.01 }];
+  hideBranchSel();
+  updateScope();
+  drawMap();
+
+  // Calibrate mm scale from pipeline transform
+  if(meta.transform?.is_synthetic){
+    mmPerUnit = 100; // synthetic: 2.4 units span ≈ 240mm airway → 100mm/unit
+  } else if(meta.transform?.scale && meta.transform.scale > 1){
+    mmPerUnit = 1000 / meta.transform.scale;
+  } else {
+    mmPerUnit = 100;
+  }
+
+  // Switch view to patient mode
+  setViewMode('patient');
+
+  // Rebuild dynamic pathology list
+  _rebuildPathoList(meta.pathologies || []);
+
+  // Update patient info in surgical planning panel
+  _updateSurgicalPanelPatient(meta);
+  _updateDicomMetaPanel(meta);
+
+  const pid = meta.patient?.patient_id || 'Unknown';
+  const nSegs = meta.segments.length;
+  const nPath = (meta.pathologies || []).length;
+
+  // Update banner now that meta is applied (first update said "awaiting meta")
+  const banner = document.getElementById('patient-loader');
+  if(banner){
+    banner.innerHTML = `
+      <div class="pl-icon">✓</div>
+      <div class="pl-text">
+        <div class="pl-title" style="color:var(--teal)">${pid}</div>
+        <div class="pl-sub">${nSegs} segments · ${nPath} patholog${nPath===1?'y':'ies'} · ${mmPerUnit.toFixed(0)} mm/unit</div>
+      </div>
+      <div class="pl-action" style="border-color:rgba(14,207,176,.3);color:var(--teal)" onclick="triggerPatientLoad()">CHANGE</div>`;
+  }
+
+  showToast(`${pid} · ${nSegs} segs · ${nPath} pathologies`, 'success');
+}
+
+// ── Update loader banner UI ───────────────────────────────────────
+function _updateLoaderBanner(loaded) {
+  const banner = document.getElementById('patient-loader');
+  if (!banner) return;
+  if (loaded) {
+    const pid = patientData.patientId || 'Patient';
+    banner.innerHTML = `
+      <div class="pl-icon">✓</div>
+      <div class="pl-text">
+        <div class="pl-title" style="color:var(--teal)">${pid}</div>
+        <div class="pl-sub">Patient mesh loaded · ${patientData.meta ? patientData.meta.segments?.length + ' segments' : 'awaiting meta'}</div>
+      </div>
+      <div class="pl-action" style="border-color:rgba(14,207,176,.3);color:var(--teal)" onclick="triggerPatientLoad()">CHANGE</div>`;
+  }
+}
+
+// ── Update surgical planning panel with patient info ──────────────
+function _updateSurgicalPanelPatient(meta) {
+  const recEl = document.getElementById('sp-recommend');
+  if (!recEl) return;
+  const pid   = meta.patient?.patient_id  || '—';
+  const date  = meta.patient?.study_date  || '—';
+  const nPath = (meta.pathologies || []).length;
+  recEl.innerHTML = `<strong>Patient ${pid}</strong> · Study ${date}<br>${nPath} patholog${nPath===1?'y':'ies'} detected. Navigate to first target.`;
+}
+
+// ── Keyboard shortcut: L = load patient ──────────────────────────
+// ==================== SERVER LOADER ====================
+function _serverUrl(){
+  // Priority: 1) input field, 2) ?server= query param, 3) localhost fallback
+  const inputVal = document.getElementById('sl-url')?.value?.trim();
+  if(inputVal && inputVal !== 'http://localhost:8000') return inputVal.replace(/\/+$/,'');
+  const qp = new URLSearchParams(window.location.search).get('server');
+  if(qp) return qp.replace(/\/+$/,'');
+  return (inputVal || 'http://localhost:8000').replace(/\/+$/,'');
+}
+function _serverStatus(msg,cls=''){
+  const el=document.getElementById('server-status');
+  if(!el)return;
+  const spinner=(!cls)?'⟳ ':'';
+  el.textContent=spinner+msg;el.className='show'+(cls?' '+cls:'');
+}
+
+async function serverSynthetic(){
+  const base=_serverUrl();
+  _serverStatus('Requesting synthetic patient…');
+  try{
+    const fd=new FormData();fd.append('patient_id','SYNTHETIC_SRV');
+    const r=await fetch(base+'/synthetic',{method:'POST',body:fd});
+    if(!r.ok)throw new Error(await r.text());
+    const j=await r.json();
+    _serverStatus('Running… job '+j.job_id);
+    _pollJob(base,j.job_id);
+  }catch(e){_serverStatus('Server offline or unreachable','err');}
+}
+
+function serverUploadDicom(){
+  const picker=document.getElementById('sl-zip-picker');
+  picker.onchange=null;
+  picker.onchange=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    picker.value='';
+    const base=_serverUrl();
+    _serverStatus('Uploading '+file.name+' ('+Math.round(file.size/1024/1024,1)+'MB)…');
+    document.getElementById('sl-upload-btn').disabled=true;
+    try{
+      const fd=new FormData();
+      fd.append('file',file);
+      fd.append('patient_id',file.name.replace(/\.zip$/i,''));
+      const r=await fetch(base+'/process',{method:'POST',body:fd});
+      if(!r.ok)throw new Error(await r.text());
+      const j=await r.json();
+      _serverStatus('Processing… job '+j.job_id);
+      _pollJob(base,j.job_id);
+    }catch(e){
+      _serverStatus('Upload failed — is server running?','err');
+      document.getElementById('sl-upload-btn').disabled=false;
+    }
+  };
+  picker.click();
+}
+
+async function _pollJob(base,jobId){
+  const btn=document.getElementById('sl-upload-btn');
+  const MAX_WAIT=600,INTERVAL=4;let elapsed=0;
+  while(elapsed<MAX_WAIT){
+    await new Promise(r=>setTimeout(r,INTERVAL*1000));
+    elapsed+=INTERVAL;
+    try{
+      const r=await fetch(base+'/status/'+jobId);
+      const j=await r.json();
+      const mins=Math.floor(j.elapsed_s/60),secs=Math.round(j.elapsed_s%60);
+      const timeStr=mins>0?mins+'m '+secs+'s':secs+'s';
+
+      if(j.status==='done'){
+        _serverStatus('Done ('+timeStr+') — loading…','ok');
+        await _loadFromServer(base,jobId,j.patient_id);
+        if(btn)btn.disabled=false;
+        return;
+      }
+      if(j.status==='failed'){
+        _serverStatus('Pipeline failed: '+(j.error||'unknown'),'err');
+        if(btn)btn.disabled=false;
+        return;
+      }
+      // Still running — show last log line
+      const lastLog=(j.log||[]).slice(-1)[0]||'Processing…';
+      _serverStatus('['+timeStr+'] '+lastLog);
+    }catch(e){
+      _serverStatus('Lost connection to server','err');
+      if(btn)btn.disabled=false;
+      return;
+    }
+  }
+  _serverStatus('Timeout after '+MAX_WAIT+'s — check server','err');
+  if(btn)btn.disabled=false;
+}
+
+async function _loadFromServer(base,jobId,patientId){
+  try{
+    // Fetch GLB as ArrayBuffer
+    const glbResp=await fetch(base+'/result/'+jobId+'/glb');
+    if(!glbResp.ok)throw new Error('GLB fetch failed: '+glbResp.status);
+    const glbBuf=await glbResp.arrayBuffer();
+
+    // Fetch JSON
+    const jsonResp=await fetch(base+'/result/'+jobId+'/json');
+    if(!jsonResp.ok)throw new Error('JSON fetch failed: '+jsonResp.status);
+    const meta=await jsonResp.json();
+
+    // Reuse existing loaders
+    _loadGLTFFromArrayBuffer(glbBuf, patientId+'_airway.glb', ()=>{
+      _applyPatientMeta(meta);
+      _serverStatus('Patient '+patientId+' loaded','ok');
+    });
+  }catch(e){
+    _serverStatus('Could not load result from server','err');
+  }
+}
+window.serverUploadDicom=serverUploadDicom;
+window.serverSynthetic=serverSynthetic;
+// ==================== END SERVER LOADER ====================
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'L' || e.key === 'l') triggerPatientLoad();
+});
+
+// Pre-fill server URL from query param if present
+(function(){
+  const qp = new URLSearchParams(window.location.search).get('server');
+  if(qp){
+    const el = document.getElementById('sl-url');
+    if(el) el.value = qp;
+  }
+})();
+console.log('PNEUMO·VR Phase 3 — Patient mesh loader ready · Press L or click LOAD CT');
+// ================================================================
+// END PHASE 3
 // ================================================================
 
 console.log('PNEUMO·VR v20 — Surgical Planning Edition loaded');
